@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: templates
+title: 智能体核心配置模板
+scope:
+    - templates/
+source_files: []
+depends_on: []
+related_to: []
+field_sources:
+    tech_stack: user
+    unique_setup_and_commands: user

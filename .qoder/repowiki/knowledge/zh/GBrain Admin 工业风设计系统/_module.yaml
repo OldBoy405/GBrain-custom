@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: frontend_style
+title: GBrain Admin 工业风设计系统
+scope: []
+source_files:
+    - admin/DESIGN.md
+    - admin/src/index.css
+    - admin/src/App.tsx
+    - admin/src/pages/Dashboard.tsx
+    - admin/package.json
+depends_on: []
+related_to: []

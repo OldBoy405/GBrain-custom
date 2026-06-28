@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: recipes_and_examples
+title: 语音智能体参考实现与技能包规范
+scope:
+    - recipes/
+    - examples/
+source_files: []
+depends_on: []
+related_to: []

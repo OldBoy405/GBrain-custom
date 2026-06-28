@@ -1,0 +1,14 @@
+schema_version: 1
+module_path: dependency_management
+title: Bun 驱动的依赖管理与多工作区策略
+scope: []
+source_files:
+    - package.json
+    - bun.lock
+    - admin/package.json
+    - admin/bun.lock
+    - bunfig.toml
+    - .github/workflows/test.yml
+    - scripts/ci-local.sh
+depends_on: []
+related_to: []

@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: scripts
+title: CI/CD 流水线与质量门禁
+scope:
+    - scripts/
+source_files: []
+depends_on: []
+related_to:
+    - path: oauth_security_trust

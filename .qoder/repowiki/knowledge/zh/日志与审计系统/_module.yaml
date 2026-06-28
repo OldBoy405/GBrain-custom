@@ -1,0 +1,15 @@
+schema_version: 1
+module_path: logging_system
+title: 日志与审计系统
+scope: []
+source_files:
+    - src/cli.ts
+    - src/core/operations.ts
+    - src/core/errors.ts
+    - src/core/progress.ts
+    - src/core/console-prefix.ts
+    - src/core/audit/audit-writer.ts
+    - src/core/ingestion/daemon.ts
+    - src/core/mcp-client.ts
+depends_on: []
+related_to: []

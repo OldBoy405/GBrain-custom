@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>GBrain 项目架构全景分析</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+:root{--bg:#0a0a0f;--surface:#14141f;--surface2:#1e1e2e;--text:#e0e0e0;--text2:#888;--accent:#3b82f6;--success:#22c55e;--warn:#f59e0b;--err:#ef4444;--mono:'JetBrains Mono',Consolas,monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font:14px/1.7 Inter,system-ui,sans-serif;padding:2rem;max-width:1200px;margin:auto}
+h1{font-size:28px;border-bottom:2px solid var(--accent);padding-bottom:.5rem;margin-bottom:1.5rem}
+h2{font-size:22px;color:var(--accent);margin:2rem 0 1rem;padding-left:.5rem;border-left:4px solid var(--accent)}
+h3{font-size:17px;color:var(--warn);margin:1.5rem 0 .8rem}
+h4{font-size:15px;color:var(--text2);margin:1rem 0 .5rem}
+p,li{color:var(--text);margin-bottom:.5rem}
+ul{padding-left:1.5rem}
+code{background:var(--surface2);padding:2px 6px;border-radius:3px;font:13px var(--mono)}
+pre{background:var(--surface);padding:1rem;border-radius:6px;overflow-x:auto;margin:.8rem 0;font:13px/1.5 var(--mono);border:1px solid var(--surface2)}
+.mermaid{background:var(--surface);border-radius:8px;padding:1.5rem;margin:1.5rem 0;border:1px solid var(--surface2)}
+.card{background:var(--surface);border-radius:8px;padding:1.2rem;margin:1rem 0;border:1px solid var(--surface2)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem}
+table{width:100%;border-collapse:collapse;margin:.8rem 0}
+th{text-align:left;color:var(--text2);font-size:12px;text-transform:uppercase;letter-spacing:.5px;padding:8px 12px;border-bottom:1px solid var(--surface2)}
+td{padding:8px 12px;border-bottom:1px solid #1a1a2a}
+.badge{display:inline-block;padding:2px 8px;border-radius:9999px;font-size:11px;font-weight:600}
+.b-blue{background:#3b82f622;color:#3b82f6}
+.b-green{background:#22c55e22;color:#22c55e}
+.b-yellow{background:#f59e0b22;color:#f59e0b}
+.b-red{background:#ef444422;color:#ef4444}
+.toc{background:var(--surface);padding:1.5rem;border-radius:8px;margin-bottom:2rem;border:1px solid var(--surface2)}
+.toc a{color:var(--accent);text-decoration:none;display:block;padding:4px 0}
+.toc a:hover{text-decoration:underline}
+.section{margin-bottom:3rem}
+.file-ref{color:var(--text2);font-size:12px;font-style:italic}
+hr{border:none;border-top:1px solid var(--surface2);margin:2rem 0}
+</style>
+</head>
+<body>
+<h1>GBrain 项目架构全景分析</h1>
+<p style="color:var(--text2)">v0.42.52.0 · TypeScript + Bun · 混合 RAG 知识图谱引擎</p>
+
+<div class="toc">
+<h3 style="margin-top:0">目录</h3>
+<a href="#overview">1. 整体架构概览</a>
+<a href="#engine">2. BrainEngine 双引擎抽象层</a>
+<a href="#operations">3. Contract-First 统一操作层</a>
+<a href="#mcp">4. MCP 服务器与传输层</a>
+<a href="#search">5. 搜索与检索管道</a>
+<a href="#ai">6. AI 网关与模型路由</a>
+<a href="#minions">7. Minions 任务队列与编排</a>
+<a href="#skills">8. 技能系统与路由</a>
+<a href="#memory">9. 记忆与知识系统</a>
+<a href="#lifecycle">10. 生命周期与部署</a>
+</div>
+
+<!-- ====== 1. 整体架构 ====== -->
+<div class="section" id="overview">
+<h2>1. 整体架构概览</h2>
+<p>GBrain 是一个 <strong>Postgres 原生的个人知识图谱引擎</strong>，为 AI 代理提供混合 RAG 检索、实体图谱遍历和知识进化能力。核心设计哲学：<strong>Contract-First（契约优先）</strong>——CLI 和 MCP 服务器从同一份操作定义自动生成。</p>
+
+<div class="mermaid">
+graph TB
+    subgraph 用户/代理入口
+        CLI["gbrain CLI<br/>(src/cli.ts)"]
+        STDIO["MCP stdio<br/>(src/mcp/server.ts)"]
+        HTTP["HTTP MCP<br/>(serve-http.ts)"]
+    end
+
+    subgraph 统一操作层
+        OPS["operations.ts<br/>~90 个操作定义"]
+        DISPATCH["dispatch.ts<br/>共享调度器"]
+    end
+
+    subgraph 核心引擎层
+        ENGINE_IF["engine-factory.ts<br/>动态导入"]
+        PG["PostgresEngine<br/>postgres-engine.ts"]
+        PGL["PGLiteEngine<br/>pglite-engine.ts"]
+    end
+
+    subgraph 数据层
+        PGDB[(PostgreSQL<br/>+ pgvector)]
+        PGLDB[(PGLite WASM<br/>嵌入式 Postgres)]
+    end
+
+    subgraph AI 层
+        GW["AI Gateway<br/>ai/gateway.ts"]
+        RECIPES["20+ Recipes<br/>ai/recipes/*.ts"]
+    end
+
+    subgraph 搜索管道
+        HYBRID["hybridSearch()<br/>RRF 融合"]
+        MODE["搜索模式<br/>mode.ts"]
+        CACHE["查询缓存<br/>knobs_hash"]
+    end
+
+    subgraph 后台任务
+        WORKER["MinionWorker<br/>worker.ts"]
+        QUEUE["MinionQueue<br/>queue.ts"]
+        SUPER["Supervisor<br/>supervisor.ts"]
+    end
+
+    CLI --> OPS
+    STDIO --> DISPATCH --> OPS
+    HTTP --> DISPATCH
+
+    OPS --> ENGINE_IF
+    ENGINE_IF --> PG --> PGDB
+    ENGINE_IF --> PGL --> PGLDB
+
+    OPS --> HYBRID
+    HYBRID --> MODE
+    HYBRID --> CACHE
+    HYBRID --> GW --> RECIPES
+
+    OPS --> QUEUE
+    QUEUE --> WORKER
+    WORKER --> SUPER
+    WORKER --> GW
+</div>
+
+<h3>分层架构说明</h3>
+<table>
+<tr><th>层级</th><th>职责</th><th>关键文件</th></tr>
+<tr><td><span class="badge b-blue">传输层</span></td><td>CLI 解析、MCP stdio/HTTP 协议、认证</td><td><code>src/cli.ts</code>, <code>src/mcp/server.ts</code>, <code>src/commands/serve-http.ts</code></td></tr>
+<tr><td><span class="badge b-green">操作层</span></td><td>~90 个 Contract-First 操作定义，统一 CLI+MCP</td><td><code>src/core/operations.ts</code>, <code>src/mcp/dispatch.ts</code></td></tr>
+<tr><td><span class="badge b-yellow">引擎层</span></td><td>BrainEngine 接口，双引擎实现</td><td><code>src/core/engine.ts</code>, <code>postgres-engine.ts</code>, <code>pglite-engine.ts</code></td></tr>
+<tr><td><span class="badge b-red">AI 层</span></td><td>嵌入、查询扩展、文本生成、模型路由</td><td><code>src/core/ai/gateway.ts</code>, <code>src/core/ai/recipes/</code></td></tr>
+<tr><td><span class="badge b-blue">搜索层</span></td><td>混合检索、RRF 融合、缓存、模式管理</td><td><code>src/core/search/</code></td></tr>
+<tr><td><span class="badge b-green">任务层</span></td><td>后台作业队列、锁管理、监督器</td><td><code>src/core/minions/</code></td></tr>
+<tr><td><span class="badge b-yellow">技能层</span></td><td>Markdown 技能文件、路由表、约定</td><td><code>skills/</code></td></tr>
+</table>
+</div>
+
+<!-- ====== 2. 双引擎 ====== -->
+<div class="section" id="engine">
+<h2>2. BrainEngine 双引擎抽象层</h2>
+
+<div class="mermaid">
+graph LR
+    subgraph BrainEngine 接口
+        LIFECYCLE["生命周期<br/>connect/disconnect/initSchema"]
+        PAGES["页面 CRUD<br/>getPage/putPage/listPages"]
+        SEARCH["搜索<br/>searchKeyword/searchVector"]
+        GRAPH["图谱<br/>addLinksBatch/traverseGraph"]
+        CHUNKS["分块<br/>upsertChunks/staleChunks"]
+        RAW["原始 SQL<br/>executeRaw/transaction"]
+    end
+
+    subgraph PostgresEngine
+        CONN_MGR["ConnectionManager<br/>读写分离路由"]
+        PG_JS["postgres.js<br/>PgBouncer 兼容"]
+        POOL["连接池<br/>Pooler 端口/直连端口"]
+    end
+
+    subgraph PGLiteEngine
+        WASM["PGLite WASM<br/>嵌入式 Postgres 17"]
+        MEM["内存模式<br/>或文件持久化"]
+    end
+
+    PG_JS --> CONN_MGR --> POOL
+    WASM --> MEM
+</div>
+
+<h3>关键设计决策</h3>
+<div class="grid2">
+<div class="card">
+<h4>动态导入（按需加载）</h4>
+<pre>export async function createEngine(config) {
+  switch (config.engine) {
+    case 'pglite':
+      const { PGLiteEngine } = await import('./pglite-engine.ts');
+      return new PGLiteEngine();
+    case 'postgres':
+      const { PostgresEngine } = await import('./postgres-engine.ts');
+      return new PostgresEngine();
+  }
+}</pre>
+<p class="file-ref">src/core/engine-factory.ts — PGLite WASM 不会为 Postgres 用户加载</p>
+</div>
+<div class="card">
+<h4>引擎对等保障</h4>
+<ul>
+<li><code>test/e2e/engine-parity.test.ts</code> — 相同数据集上对比两引擎结果</li>
+<li><code>test/schema-bootstrap-coverage.test.ts</code> — 前向引用列必须有 bootstrap 覆盖</li>
+<li><code>test/e2e/schema-drift.test.ts</code> — Schema 差异检测</li>
+</ul>
+</div>
+</div>
+
+<h3>多源隔离机制</h3>
+<div class="card">
+<p>所有数据表的核心唯一约束为 <code>(source_id, slug)</code>，而非单独的 slug。</p>
+<pre>-- 页面表的唯一性约束
+UNIQUE (source_id, slug) WHERE deleted_at IS NULL
+
+-- 读取操作强制源过滤
+sourceScopeOpts(ctx) → 优先级:
+  ctx.auth.allowedSources (联邦数组) > ctx.sourceId (标量) > 无</pre>
+<p><strong>两个组织轴：</strong></p>
+<ul>
+<li><strong>Brain（大脑）</strong> = 哪个数据库。路由: <code>--brain</code>, <code>GBRAIN_BRAIN_ID</code>。默认: <code>host</code></li>
+<li><strong>Source（源）</strong> = 数据库内的哪个内容仓库。路由: <code>--source</code>, <code>GBRAIN_SOURCE</code>。默认: <code>default</code></li>
+</ul>
+</div>
+</div>
+
+<!-- ====== 3. 操作层 ====== -->
+<div class="section" id="operations">
+<h2>3. Contract-First 统一操作层</h2>
+
+<div class="mermaid">
+graph TB
+    subgraph "operations.ts (单一定义)"
+        OP1["Operation: search<br/>params, handler, scope"]
+        OP2["Operation: put_page<br/>params, handler, scope"]
+        OP3["Operation: query<br/>params, handler, scope"]
+        OPN["... ~90 个操作"]
+    end
+
+    subgraph "CLI 自动生成"
+        CLI_MAP["cliHints.name → 命令名"]
+        CLI_PARSE["参数解析 → handler(ctx, params)"]
+        CLI_FMT["formatResult → stdout"]
+    end
+
+    subgraph "MCP 自动生成"
+        MCP_DEFS["buildToolDefs() → 工具 schema"]
+        MCP_DISPATCH["dispatchToolCall() → handler"]
+        MCP_META["_meta.brain_hot_memory 注入"]
+    end
+
+    OP1 & OP2 & OP3 & OPN --> CLI_MAP --> CLI_PARSE --> CLI_FMT
+    OP1 & OP2 & OP3 & OPN --> MCP_DEFS
+    OP1 & OP2 & OP3 & OPN --> MCP_DISPATCH --> MCP_META
+</div>
+
+<h3>Operation 接口结构</h3>
+<pre>interface Operation {
+  name: string;              // 操作唯一名 (e.g. 'search', 'put_page')
+  description: string;       // MCP 工具描述
+  params: Record&lt;string, ParamDef&gt;;  // 参数 schema
+  handler: (ctx: OperationContext, params) => Promise&lt;unknown&gt;;
+  mutating?: boolean;        // 是否写操作
+  scope: 'read' | 'write' | 'admin' | 'sources_admin';  // 权限范围
+  localOnly?: boolean;       // 仅本地 (protected-name 任务)
+  cliHints?: { name: string; hidden?: boolean };  // CLI 命令映射
+}</pre>
+
+<h3>OperationContext 信任边界</h3>
+<div class="card">
+<pre>interface OperationContext {
+  engine: BrainEngine;
+  config: GBrainConfig;
+  logger: Logger;
+  remote: boolean;        // <strong>核心安全字段</strong>：false=可信CLI, true=不可信远程
+  sourceId?: string;      // 源隔离
+  auth?: AuthInfo;        // OAuth 认证信息
+  takesHoldersAllowList?: string[];  // Takes 持有者白名单
+}</pre>
+<table>
+<tr><th>入口</th><th>remote</th><th>说明</th></tr>
+<tr><td><code>src/cli.ts</code></td><td><span class="badge b-green">false</span></td><td>可信本地 CLI 调用者</td></tr>
+<tr><td><code>src/mcp/server.ts</code> (stdio)</td><td><span class="badge b-red">true</span></td><td>不可信 MCP stdio 调用者</td></tr>
+<tr><td><code>src/commands/serve-http.ts</code></td><td><span class="badge b-red">true</span></td><td>不可信 HTTP/OAuth 调用者</td></tr>
+<tr><td><code>gbrain call &lt;op&gt;</code></td><td><span class="badge b-green">false</span></td><td>受信本地快捷路径</td></tr>
+</table>
+<p><strong>Fail-closed 原则</strong>：<code>ctx.remote === undefined</code> 被视为远程/不可信</p>
+</div>
+</div>
+
+<!-- ====== 4. MCP 传输层 ====== -->
+<div class="section" id="mcp">
+<h2>4. MCP 服务器与传输层</h2>
+
+<div class="mermaid">
+graph TB
+    subgraph "stdio 传输 (gbrain serve)"
+        STDIO_SDK["MCP SDK StdioServerTransport"]
+        STDIO_SRV["server.ts<br/>startMcpServer()"]
+        RESOLVE_IPC["resolve-ipc.ts<br/>Unix socket 实体解析"]
+    end
+
+    subgraph "HTTP 传输 (gbrain serve --http)"
+        EXPRESS["Express 5 服务器"]
+        AUTH["Bearer Token / OAuth 2.1"]
+        CORS["CORS 白名单"]
+        RATE["双桶速率限制"]
+    end
+
+    subgraph "共享调度 (dispatch.ts)"
+        VALIDATE["validateParams()"]
+        BUILD_CTX["buildOperationContext()"]
+        DISPATCH_FN["dispatchToolCall()"]
+        SERIALIZE["错误序列化"]
+    end
+
+    STDIO_SDK --> STDIO_SRV --> DISPATCH_FN
+    EXPRESS --> DISPATCH_FN
+    STDIO_SRV --> RESOLVE_IPC
+
+    DISPATCH_FN --> VALIDATE --> BUILD_CTX
+    BUILD_CTX --> OPS_HANDLER["op.handler(ctx, params)"]
+    OPS_HANDLER --> SERIALIZE
+</div>
+
+<h3>stdio MCP 特殊机制</h3>
+<div class="grid2">
+<div class="card">
+<h4>检索反射 IPC</h4>
+<p>PGLite 模式下只有一个数据库连接，因此通过 Unix socket 暴露实体解析服务：</p>
+<pre>if (cfg.engine === 'pglite') {
+  resolveSocket = resolveSocketPath(cfg.database_path);
+  resolveServer = await startResolveIpcServer(
+    resolveSocket,
+    (req) => resolveEntitiesToPointers(engine, ...)
+  );
+}</pre>
+</div>
+<div class="card">
+<h4>热记忆注入</h4>
+<p>每次工具调用成功后，通过 <code>metaHook</code> 注入大脑热记忆到 <code>_meta</code> 字段：</p>
+<pre>return dispatchToolCall(engine, name, params, {
+  remote: true,
+  takesHoldersAllowList: ['world'],
+  metaHook: getBrainHotMemoryMeta,  // 尽力而为
+});</pre>
+<p>Claude Desktop/Code 可读取此字段自动展示上下文。</p>
+</div>
+</div>
+</div>
+
+<!-- ====== 5. 搜索管道 ====== -->
+<div class="section" id="search">
+<h2>5. 搜索与检索管道</h2>
+
+<div class="mermaid">
+graph LR
+    Q["用户查询"] --> INTENT["意图分类<br/>intent.ts<br/>entity/temporal/event/general"]
+    INTENT --> VEC["向量搜索<br/>searchVector()<br/>pgvector 余弦相似度"]
+    INTENT --> KW["关键词搜索<br/>searchKeyword()<br/>Postgres BM25"]
+    INTENT --> REL["关系召回<br/>relational-recall.ts<br/>知识图谱边遍历"]
+    INTENT --> EXP["查询扩展<br/>expansion.ts<br/>(仅 tokenmax)"]
+
+    VEC --> RRF["RRF 融合<br/>score = Σ 1/(60+rank)"]
+    KW --> RRF
+    REL --> RRF
+
+    RRF --> TRUTH["compiled truth<br/>2.0x boost"]
+    TRUTH --> COS["余弦重排<br/>0.7*rrf + 0.3*cosine"]
+    COS --> DEDUP["源感知去重<br/>dedup.ts"]
+    DEDUP --> BOOST["源加权<br/>source-boost.ts"]
+    BOOST --> AUTOCUT["自适应截断<br/>autocut.ts"]
+    AUTOCUT --> BUDGET["Token 预算<br/>token-budget.ts"]
+    BUDGET --> RESULT["最终结果"]
+
+    CACHE_Q["查询缓存<br/>knobs_hash v10"] -.->|命中| RESULT
+    RRF -.->|未命中| CACHE_Q
+</div>
+
+<h3>三种搜索模式</h3>
+<table>
+<tr><th>旋钮</th><th><span class="badge b-green">conservative</span></th><th><span class="badge b-blue">balanced</span></th><th><span class="badge b-yellow">tokenmax</span></th></tr>
+<tr><td>tokenBudget</td><td>4,000</td><td>12,000</td><td>off</td></tr>
+<tr><td>expansion (LLM 多查询)</td><td>false</td><td>false</td><td><strong>true</strong></td></tr>
+<tr><td>relationalRetrieval</td><td>false</td><td><strong>true</strong></td><td><strong>true</strong></td></tr>
+<tr><td>searchLimit</td><td>10</td><td>25</td><td>50</td></tr>
+</table>
+
+<h3>缓存防污染机制</h3>
+<div class="card">
+<p><code>knobs_hash</code>（当前 v=10）折叠以下因子到缓存键：</p>
+<ul>
+<li>搜索旋钮（limit, expansion, relational...）</li>
+<li>嵌入列名 + 嵌入提供商（防止 1536d OpenAI 结果污染 1024d Voyage 查询）</li>
+<li>关系召回深度</li>
+</ul>
+<pre>查询缓存查找条件:
+WHERE source_id = $ AND knobs_hash = $ AND embedding_similarity > $</pre>
+</div>
+</div>
+
+<!-- ====== 6. AI 网关 ====== -->
+<div class="section" id="ai">
+<h2>6. AI 网关与模型路由</h2>
+
+<div class="mermaid">
+graph TB
+    subgraph "AI Gateway (gateway.ts ~3400行)"
+        CONFIGURE["configureGateway()<br/>一次性配置, 运行时不读 env"]
+        EMBED["embed() / embedOne()<br/>文本嵌入"]
+        EMBED_MM["embedMultimodal()<br/>多模态嵌入"]
+        EXPAND["expand()<br/>查询扩展"]
+        GENERATE["generateText/Object<br/>文本生成"]
+        RERANK["rerank()<br/>交叉编码器重排"]
+    end
+
+    subgraph "Recipe 系统 (20+ 提供商)"
+        R_OAI["OpenAI"]
+        R_ANT["Anthropic"]
+        R_GOOGLE["Google"]
+        R_VOYAGE["Voyage"]
+        R_OLLAMA["Ollama"]
+        R_OPENROUTER["OpenRouter"]
+        R_DEEPSEEK["DeepSeek"]
+        R_OTHER["... 15+"]
+    end
+
+    subgraph "模型配置解析"
+        RESOLVE["resolveModel()<br/>per-call → config → TIER_DEFAULTS"]
+        DIMS["dims.ts<br/>维度协商"]
+        PRICING["model-pricing.ts<br/>唯一定价源"]
+    end
+
+    CONFIGURE --> EMBED & EMBED_MM & EXPAND & GENERATE & RERANK
+    EMBED --> RESOLVE --> R_OAI & R_ANT & R_GOOGLE & R_VOYAGE & R_OLLAMA & R_OPENROUTER & R_DEEPSEEK & R_OTHER
+    EMBED --> DIMS
+    GENERATE --> PRICING
+</div>
+
+<h3>Recipe 架构模式</h3>
+<div class="card">
+<p>每个提供商适配器（<code>src/core/ai/recipes/*.ts</code>）定义：</p>
+<ul>
+<li><strong>模型创建</strong>：如何将 <code>provider:model</code> 格式映射到 AI SDK 实例</li>
+<li><strong>维度处理</strong>：默认嵌入维度、是否支持显式维度透传</li>
+<li><strong>错误归一化</strong>：将提供商特有错误转为 <code>AIConfigError</code> / <code>AITransientError</code></li>
+<li><strong>Touchpoints</strong>：按用途（embedding, chat, reranker 等）声明模型配置</li>
+</ul>
+</div>
+</div>
+
+<!-- ====== 7. Minions ====== -->
+<div class="section" id="minions">
+<h2>7. Minions 任务队列与编排</h2>
+
+<div class="mermaid">
+graph TB
+    subgraph "提交入口"
+        CLI_SUBMIT["gbrain jobs submit shell"]
+        CLI_AGENT["gbrain agent run"]
+        MCP_SUBMIT["MCP submit_job<br/>(protected-name 检查)"]
+    end
+
+    subgraph "队列核心 (queue.ts)"
+        CRUD["作业 CRUD"]
+        SM["状态机<br/>waiting → active → completed/failed/dead"]
+        DEP["依赖图<br/>parent/children"]
+        INBOX["inbox 机制<br/>child_done"]
+    end
+
+    subgraph "Worker (worker.ts)"
+        CLAIM["claim() — 声明作业"]
+        EXEC["executeJob() — 执行"]
+        LOCK["锁续约<br/>lock-renewal-tick.ts"]
+        ABORT["AbortController<br/>超时/取消/锁丢失"]
+        RSS["RSS 看门狗<br/>内存泄漏检测"]
+        HEALTH["健康检查<br/>DB 探针 + 停滞检测"]
+    end
+
+    subgraph "Handlers"
+        H_SHELL["shell.ts — Shell 作业"]
+        H_SUB["subagent.ts — LLM 子代理"]
+        H_EMBED["embed-backfill.ts — 嵌入回填"]
+        H_CTX["contextual-reindex — 上下文重索引"]
+    end
+
+    subgraph "Supervisor (supervisor.ts)"
+        SPAWN["Worker 生命周期管理"]
+        PROGRESS["进度看门狗"]
+        CASCADE["级联终止"]
+    end
+
+    CLI_SUBMIT & CLI_AGENT & MCP_SUBMIT --> CRUD --> SM
+    SM --> CLAIM --> EXEC
+    EXEC --> H_SHELL & H_SUB & H_EMBED & H_CTX
+    EXEC --> LOCK
+    EXEC --> ABORT
+    EXEC --> RSS
+    SPAWN --> PROGRESS --> CASCADE
+</div>
+
+<h3>Worker 执行流程</h3>
+<div class="card">
+<pre>launchJob(job, lockToken):
+  1. 创建 AbortController (per-job)
+  2. 启动锁续约 setInterval (lockDuration/2 间隔)
+     → runLockRenewalTick() 纯函数, 结果分类:
+       ok | cancelled | lock_lost | should_abort
+  3. 注册 grace-eviction timer (abort 后 30s 强制驱逐)
+  4. 注册 per-job wall-clock timeout (如果 timeout_ms 设置)
+  5. executeJob() → handler(context)
+     .finally(): cancelled=true, 清理 timers, 检查 RSS
+     .catch(): 捕获 executeJob 链内未处理异常
+
+基础设施中止处理 (INFRASTRUCTURE_ABORT_REASONS):
+  lock-renewal-failed / lock-lost → <strong>不</strong>调用 failJob
+  → 让停滞检测器重新排队 (不消耗 attempts)</pre>
+</div>
+
+<h3>Protected Names 安全机制</h3>
+<div class="card">
+<table>
+<tr><th>任务名</th><th>本地 CLI</th><th>MCP 远程</th></tr>
+<tr><td><code>shell</code></td><td>允许</td><td><span class="badge b-red">拒绝</span></td></tr>
+<tr><td><code>synthesize</code></td><td>允许</td><td><span class="badge b-red">拒绝</span></td></tr>
+<tr><td><code>patterns</code></td><td>允许</td><td><span class="badge b-red">拒绝</span></td></tr>
+<tr><td><code>consolidate</code></td><td>允许</td><td><span class="badge b-red">拒绝</span></td></tr>
+<tr><td>其他任务</td><td>允许</td><td>允许</td></tr>
+</table>
+</div>
+</div>
+
+<!-- ====== 8. 技能系统 ====== -->
+<div class="section" id="skills">
+<h2>8. 技能系统与路由</h2>
+
+<div class="mermaid">
+graph TB
+    MSG["用户消息"] --> ALWAYS["始终触发<br/>signal-detector + brain-ops"]
+    MSG --> RESOLVER["RESOLVER.md<br/>调度总表"]
+
+    RESOLVER --> BRAIN_OPS["Brain 操作<br/>query/enrich/citation-fixer/..."]
+    RESOLVER --> INGEST["内容摄取<br/>capture/idea-ingest/media-ingest/..."]
+    RESOLVER --> THINK["思维技能 (GStack)<br/>office-hours/ceo-review/..."]
+    RESOLVER --> OPERATIONAL["运维操作<br/>task-manager/briefing/cron/..."]
+    RESOLVER --> SETUP["设置与迁移<br/>setup/cold-start/migrate/..."]
+
+    subgraph "技能文件结构 (SKILL.md)"
+        FM["YAML frontmatter<br/>name, description, triggers"]
+        CONTRACT["Contract 章节"]
+        PHASES["Phases 章节"]
+        OUTPUT["Output Format"]
+        ANTI["Anti-Patterns"]
+    end
+
+    subgraph "约定层 (conventions/)"
+        BF["brain-first: 先查脑再查外部"]
+        MR["model-routing: 模型选择"]
+        Q["quality: 引用/反链/质量门"]
+        SE["schema-evolution: 类型演化"]
+        SR["subagent-routing: 内联 vs Minions"]
+    end
+
+    BRAIN_OPS -.-> BF
+    INGEST -.-> BF
+</div>
+
+<h3>SKILL.md 规范</h3>
+<div class="card">
+<pre>---
+name: query
+description: Search and retrieve knowledge from the brain
+triggers:
+  - "what do we know about"
+  - "search for"
+  - "who is"
+  - "background on"
+tools: [search, get_page, graph_query]
+mutating: false
+brain_first: true
+---
+
+# Query
+
+## Contract
+Guarantees the skill provides...
+
+## Phases
+1. Phase 1: ...
+2. Phase 2: ...
+
+## Output Format
+...
+
+## Anti-Patterns
+Never do X...</pre>
+</div>
+
+<h3>路由消歧规则</h3>
+<div class="card">
+<ol>
+<li><strong>最具体优先</strong>：meeting-ingestion 优于 ingest</li>
+<li><strong>内容类型分流</strong>：URL → 按内容类型路由（link→idea-ingest, video→media-ingest）</li>
+<li><strong>链式调用</strong>：技能间可显式链（如 ingest 后 enrich）</li>
+<li><strong>始终并行</strong>：signal-detector 和 brain-ops 始终与主技能并行触发</li>
+</ol>
+</div>
+</div>
+
+<!-- ====== 9. 记忆系统 ====== -->
+<div class="section" id="memory">
+<h2>9. 记忆与知识系统</h2>
+
+<div class="mermaid">
+graph TB
+    subgraph "数据摄入管道"
+        FILE["Markdown 文件 / URL / 音频"]
+        PARSE["parseMarkdown()<br/>frontmatter 解析"]
+        CHUNK["三级分块器<br/>recursive / semantic / code"]
+        EMBED_BATCH["embedBatch()<br/>批量嵌入"]
+        LINK["extractPageLinks()<br/>链接/时间线抽取"]
+        WRITE["writePageThrough()<br/>原子写入"]
+    end
+
+    subgraph "数据模型"
+        PAGES["pages 表<br/>(source_id, slug) 唯一"]
+        CHUNKS_T["chunks 表<br/>向量 + 文本分块"]
+        LINKS["links 表<br/>知识图谱边"]
+        TIMELINE["timeline_entries<br/>时间线事件"]
+        TAKES["takes 表<br/>观点/立场"]
+        FACTS["facts 表<br/>结构化事实"]
+        FILES["files 表<br/>二进制资源元数据"]
+    end
+
+    subgraph "知识进化"
+        EXTRACT["gbrain extract<br/>链接/时间线回填"]
+        DREAM["dream 周期<br/>synthesize/patterns/consolidate"]
+        ENRICH["enrich 技能<br/>实体丰富化"]
+        SCHEMA["schema-author<br/>页面类型演化"]
+    end
+
+    FILE --> PARSE --> CHUNK --> EMBED_BATCH
+    EMBED_BATCH --> WRITE
+    PARSE --> LINK --> WRITE
+
+    WRITE --> PAGES & CHUNKS_T & LINKS & TIMELINE & TAKES & FACTS & FILES
+
+    PAGES --> EXTRACT --> LINKS
+    PAGES --> DREAM --> CHUNKS_T
+    PAGES --> ENRICH --> FACTS
+    PAGES --> SCHEMA
+</div>
+
+<h3>导入管道详解</h3>
+<div class="card">
+<p><code>src/core/import-file.ts</code> 是核心导入入口（~1700行），处理流程：</p>
+<ol>
+<li><strong>Markdown 解析</strong>：frontmatter + 正文分离，代码围栏提取</li>
+<li><strong>分块</strong>：
+  <ul>
+    <li><code>recursive.ts</code> — 递归分块（默认）</li>
+    <li><code>code.ts</code> — 代码感知分块（tree-sitter）</li>
+    <li>围栏代码块独立分块（<code>chunk_source='fenced_code'</code>）</li>
+  </ul>
+</li>
+<li><strong>内容健全性检查</strong>：<code>assessContentSanity()</code> — 隔离/拒绝垃圾内容</li>
+<li><strong>嵌入</strong>：<code>embedBatch()</code> → AI Gateway → 向量存储</li>
+<li><strong>上下文检索前缀</strong>：为每个分块生成 LLM 摘要前缀（contextual retrieval）</li>
+<li><strong>链接提取</strong>：实体引用、时间线条目、自动链接</li>
+<li><strong>原子写入</strong>：<code>writePageThrough()</code> — 页面 + 分块 + 链接在同一事务中</li>
+</ol>
+</div>
+
+<h3>知识图谱</h3>
+<div class="card">
+<pre>-- 图谱遍历 (traverseGraph)
+WITH RECURSIVE bfs AS (
+  SELECT from_slug, to_slug, link_type, 1 AS depth
+  FROM links WHERE from_slug = $1
+  UNION ALL
+  SELECT l.from_slug, l.to_slug, l.link_type, bfs.depth + 1
+  FROM links l JOIN bfs ON l.from_slug = bfs.to_slug
+  WHERE bfs.depth < $2
+)
+SELECT * FROM bfs</pre>
+<p><strong>关系召回</strong>（balanced/tokenmax 模式）：从查询中提取实体 → 在图谱中扇出 → 将边衍生的答案注入 RRF 排名</p>
+</div>
+</div>
+
+<!-- ====== 10. 生命周期 ====== -->
+<div class="section" id="lifecycle">
+<h2>10. 生命周期与部署</h2>
+
+<h3>Agent 初始化流程</h3>
+<div class="mermaid">
+graph TB
+    START["gbrain init"] --> ENGINE_CHOICE{"选择引擎"}
+    ENGINE_CHOICE -->|PGLite| PGLITE_INIT["PGLiteEngine<br/>WASM 嵌入 Postgres"]
+    ENGINE_CHOICE -->|Postgres| PG_INIT["PostgresEngine<br/>Supabase / 自建"]
+
+    PGLITE_INIT & PG_INIT --> SCHEMA["initSchema()<br/>创建基础表 + Bootstrap"]
+    SCHEMA --> MIGRATE["applyMigrations()<br/>增量 Schema 演进"]
+    MIGRATE --> SEARCH_MODE{"选择搜索模式"}
+    SEARCH_MODE --> CONSERVATIVE["conservative<br/>$40-200/月"]
+    SEARCH_MODE --> BALANCED["balanced<br/>$100-500/月"]
+    SEARCH_MODE --> TOKENMAX["tokenmax<br/>$200-1000/月"]
+
+    CONSERVATIVE & BALANCED & TOKENMAX --> CONFIG["写入 ~/.gbrain/config.json"]
+    CONFIG --> IDENTITY["生成身份模板<br/>SOUL.md / USER.md / ACCESS_POLICY.md / HEARTBEAT.md"]
+    IDENTITY --> READY["就绪 ✓"]
+</div>
+
+<h3>MCP 服务器生命周期</h3>
+<div class="card">
+<table>
+<tr><th>阶段</th><th>事件</th><th>处理</th></tr>
+<tr><td><span class="badge b-blue">启动</span></td><td><code>gbrain serve</code></td><td>连接引擎 → 创建 MCP Server → 注册工具 → 启动 stdio transport → (PGLite: 启动 resolve IPC)</td></tr>
+<tr><td><span class="badge b-green">运行</span></td><td>工具调用</td><td>验证参数 → 构建 OperationContext → 执行 handler → 注入 _meta → 返回结果</td></tr>
+<tr><td><span class="badge b-yellow">信号</span></td><td>SIGTERM/SIGINT</td><td>关闭 resolve IPC → 断开引擎 → process.exit(0)</td></tr>
+<tr><td><span class="badge b-red">断连</span></td><td>stdin EOF</td><td>同 SIGTERM（除非 MCP_STDIO=1，此时忽略 stdin 关闭）</td></tr>
+</table>
+</div>
+
+<h3>部署步骤</h3>
+<div class="grid2">
+<div class="card">
+<h4>开发环境</h4>
+<pre># 1. 安装 Bun (>=1.3.10)
+curl -fsSL https://bun.sh/install | bash
+
+# 2. 克隆并安装依赖
+git clone https://github.com/garrytan/gbrain.git
+cd gbrain
+bun install
+
+# 3. 初始化 (PGLite 零配置)
+bun run src/cli.ts init
+
+# 4. 运行测试
+bun run test          # 单元测试
+bun run verify        # 静态检查 + 类型检查
+bun run ci:local      # 完整 CI 门禁 (需 Docker)
+
+# 5. 开发模式运行
+bun run src/cli.ts &lt;command&gt;</pre>
+</div>
+<div class="card">
+<h4>生产部署</h4>
+<pre># 1. 编译二进制
+bun build --compile --outfile bin/gbrain src/cli.ts
+
+# 2. 或使用 Supabase (大规模)
+gbrain init  # 选择 Postgres + pgvector
+
+# 3. 启动 MCP 服务
+gbrain serve             # stdio 模式
+gbrain serve --http      # HTTP + OAuth
+
+# 4. 后台任务
+gbrain autopilot --install --repo ~/brain
+
+# 5. 健康检查
+gbrain doctor --fix
+
+# PGLite → Postgres 迁移
+gbrain migrate --to supabase</pre>
+</div>
+</div>
+
+<h3>Minions Worker 生命周期</h3>
+<div class="card">
+<pre>Worker 启动:
+  gbrain jobs work --queue default --concurrency 4
+
+运行循环:
+  while (running):
+    promoteDelayed()          # 延迟作业提升
+    claim(lockToken, ...)     # 声明作业 (带连接错误重连)
+    → 静默时间检查 (quiet-hours)
+    → launchJob()             # 启动异步执行
+      锁续约 (setInterval, lockDuration/2)
+      超时检测 (per-job timeout_ms)
+      RSS 看门狗 (periodic + post-job)
+      健康检查 (DB 探针 + 停滞检测)
+
+优雅关闭:
+  SIGTERM → running=false → shutdownAbort.abort()
+  → 等待 in-flight 作业 (30s 超时)
+  → 清理 timers, listeners
+
+RSS 看门狗关闭:
+  RSS > maxRssMb → gracefulShutdown('watchdog')
+  → 设置 _rssWatchdogTriggered
+  → CLI 层读取标志 → 以 WORKER_EXIT_RSS_WATCHDOG 退出</pre>
+</div>
+</div>
+
+<hr>
+<p style="text-align:center;color:var(--text2);margin-top:2rem">
+  GBrain Architecture Analysis · Generated from project knowledge cards and source code
+</p>
+
+<script>
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'dark',
+  themeVariables: {
+    primaryColor: '#3b82f6',
+    primaryTextColor: '#e0e0e0',
+    primaryBorderColor: '#1e1e2e',
+    lineColor: '#888',
+    secondaryColor: '#14141f',
+    tertiaryColor: '#1e1e2e',
+    background: '#14141f',
+    mainBkg: '#1e1e2e',
+    nodeBorder: '#3b82f6',
+    clusterBkg: '#14141f',
+    titleColor: '#e0e0e0'
+  }
+});
+</script>
+</body>
+</html>

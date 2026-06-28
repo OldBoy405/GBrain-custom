@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: skills_catalog
+title: GBrain 技能目录与路由编排
+scope:
+    - skills/
+source_files: []
+depends_on:
+    - path: search_retrieval_pipeline
+related_to: []
+field_sources:
+    unique_setup_and_commands: user
