@@ -451,6 +451,47 @@ function isCustomDimValidForProvider(
     };
   }
 
+  // Ollama (local) — serves arbitrary user-pulled models over the
+  // OpenAI-compat /v1/embeddings endpoint, which honors `dimensions` for
+  // Matryoshka models (e.g. qwen3-embedding:4b). We can't allow-list by
+  // model name (user-supplied), so accept any width the pgvector column can
+  // hold and let the endpoint reject a genuinely unsupported model+dim at
+  // embed time. `dimsProviderOptions(..., 'ollama')` pins the same width on
+  // the embed request so the returned vector matches the schema.
+  if (recipe.id === 'ollama') {
+    if (Number.isInteger(requestedDims) && requestedDims >= 1 && requestedDims <= PGVECTOR_COLUMN_MAX_DIMS) {
+      return { valid: true, error: '' };
+    }
+    return {
+      valid: false,
+      error:
+        `Ollama embedding dimensions must be an integer in 1..${PGVECTOR_COLUMN_MAX_DIMS}, got ${requestedDims}.`,
+    };
+  }
+
+  // Bring-your-own-backend recipes (llama-server, litellm) declare
+  // `user_provided_models: true` and `default_dims: 0` — the user owns both
+  // the model and its output width. init.ts already refuses these recipes
+  // unless `--embedding-dimensions` is passed, so requestedDims is always
+  // explicit here. Accept any width the pgvector column can hold; the user
+  // is responsible for matching it to what their backend actually emits
+  // (llama-server: the launched model's fixed width; litellm: the proxied
+  // backend's width). A genuine mismatch surfaces fail-loud at embed time,
+  // NOT as a silent wrong-width vector. Unlike Ollama, we do NOT force a
+  // `dimensions` param on the embed request (dims.ts): llama-server has a
+  // fixed launch width and litellm's backend may reject the param.
+  if (recipe.touchpoints.embedding?.user_provided_models === true) {
+    if (Number.isInteger(requestedDims) && requestedDims >= 1 && requestedDims <= PGVECTOR_COLUMN_MAX_DIMS) {
+      return { valid: true, error: '' };
+    }
+    return {
+      valid: false,
+      error:
+        `Provider "${recipe.id}" embedding dimensions must be an integer in ` +
+        `1..${PGVECTOR_COLUMN_MAX_DIMS}, got ${requestedDims}.`,
+    };
+  }
+
   // Tier 3: provider not known to support custom dims at all.
   return {
     valid: false,

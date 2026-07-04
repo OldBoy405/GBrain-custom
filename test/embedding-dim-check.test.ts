@@ -257,6 +257,75 @@ describe('resolveSchemaEmbeddingDim', () => {
     if (got.ok) expect(got.dim).toBe(768);
   });
 
+  test('Ollama accepts an arbitrary model at its recipe-default dim', () => {
+    const got = resolveSchemaEmbeddingDim({ embedding_model: 'ollama:qwen3-embedding:4b' });
+    expect(got.ok).toBe(true);
+    if (got.ok) expect(got.dim).toBe(768); // recipe default when no override
+  });
+
+  test('Ollama accepts a custom Matryoshka dim for any model (768)', () => {
+    const got = resolveSchemaEmbeddingDim({
+      embedding_model: 'ollama:qwen3-embedding:4b',
+      embedding_dimensions: 768,
+    });
+    expect(got.ok).toBe(true);
+    if (got.ok) expect(got.dim).toBe(768);
+  });
+
+  test('Ollama accepts a custom dim not in any fixed allow-list (1024)', () => {
+    const got = resolveSchemaEmbeddingDim({
+      embedding_model: 'ollama:qwen3-embedding:4b',
+      embedding_dimensions: 1024,
+    });
+    expect(got.ok).toBe(true);
+    if (got.ok) expect(got.dim).toBe(1024);
+  });
+
+  test('Ollama accepts the model native width above the HNSW cap (2560)', () => {
+    const got = resolveSchemaEmbeddingDim({
+      embedding_model: 'ollama:qwen3-embedding:4b',
+      embedding_dimensions: 2560,
+    });
+    expect(got.ok).toBe(true);
+    if (got.ok) expect(got.dim).toBe(2560);
+  });
+
+  test('Ollama still rejects a dim above the pgvector column cap', () => {
+    const got = resolveSchemaEmbeddingDim({
+      embedding_model: 'ollama:qwen3-embedding:4b',
+      embedding_dimensions: PGVECTOR_COLUMN_MAX_DIMS + 1,
+    });
+    expect(got.ok).toBe(false);
+    if (!got.ok) expect(got.error).toMatch(/exceed pgvector's column cap/);
+  });
+
+  test('llama-server accepts an explicit user-declared dim (bring-your-own-backend)', () => {
+    const got = resolveSchemaEmbeddingDim({
+      embedding_model: 'llama-server:my-gguf',
+      embedding_dimensions: 1024,
+    });
+    expect(got.ok).toBe(true);
+    if (got.ok) expect(got.dim).toBe(1024);
+  });
+
+  test('litellm accepts an explicit user-declared dim (proxied backend)', () => {
+    const got = resolveSchemaEmbeddingDim({
+      embedding_model: 'litellm:some-backend-model',
+      embedding_dimensions: 1536,
+    });
+    expect(got.ok).toBe(true);
+    if (got.ok) expect(got.dim).toBe(1536);
+  });
+
+  test('user-provided-model recipe still rejects a dim above the pgvector cap', () => {
+    const got = resolveSchemaEmbeddingDim({
+      embedding_model: 'llama-server:my-gguf',
+      embedding_dimensions: PGVECTOR_COLUMN_MAX_DIMS + 1,
+    });
+    expect(got.ok).toBe(false);
+    if (!got.ok) expect(got.error).toMatch(/exceed pgvector's column cap/);
+  });
+
   test('unknown provider rejected with provider list hint', () => {
     const got = resolveSchemaEmbeddingDim({ embedding_model: 'notarealprovider:foo' });
     expect(got.ok).toBe(false);

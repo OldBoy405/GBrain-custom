@@ -108,12 +108,23 @@ export function isValidOpenAITextEmbedding3Dim(modelId: string, dims: number): b
  * `'document'`. Per-model filtering happens INSIDE the switch — the field
  * is NEVER emitted for providers that don't accept it (OpenAI text-3,
  * DashScope, Zhipu) so the request body stays clean for those endpoints.
+ *
+ * 5th param `providerId`: the recipe id (e.g. `'ollama'`). Optional and
+ * back-compat — when omitted the per-model heuristics below are the only
+ * signal. Ollama serves arbitrary user-pulled models over the OpenAI-compat
+ * `/v1/embeddings` endpoint, which honors the `dimensions` field (Matryoshka
+ * truncation). Since the model id is user-supplied we can't allow-list it by
+ * name; instead we key off the provider so ANY `ollama:<model>` gets its
+ * configured width pinned. Unsupported model+dim combos surface as the
+ * provider's own HTTP error at embed time (fail-loud), not a silent
+ * dimension mismatch against the schema.
  */
 export function dimsProviderOptions(
   implementation: Implementation,
   modelId: string,
   dims: number,
   inputType?: 'query' | 'document',
+  providerId?: string,
 ): Record<string, any> | undefined {
   switch (implementation) {
     case 'native-openai': {
@@ -227,6 +238,16 @@ export function dimsProviderOptions(
       // inputType==='query' → type:'query', else 'db'.
       if (modelId === 'embo-01') {
         return { openaiCompatible: { type: 'db' } };
+      }
+      // Ollama (local) — arbitrary user-pulled models on the OpenAI-compat
+      // /v1/embeddings endpoint, which honors `dimensions` for Matryoshka
+      // models (e.g. qwen3-embedding:4b: native 2560, truncatable 32..2560).
+      // We key off providerId, not the model name, so ANY ollama:<model>
+      // gets its configured width pinned. Fixed-dim models that reject a
+      // mismatched `dimensions` fail loud at the endpoint rather than
+      // returning a wrong-width vector. Symmetric — inputType ignored.
+      if (providerId === 'ollama') {
+        return { openaiCompatible: { dimensions: dims } };
       }
       return undefined;
   }

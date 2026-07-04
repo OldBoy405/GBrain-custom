@@ -173,6 +173,22 @@ describe('dims.dimsProviderOptions', () => {
     expect(opts).toBeUndefined();
   });
 
+  test('Ollama pins the configured dimensions for any model id', () => {
+    // Arbitrary user-pulled model + custom Matryoshka width.
+    expect(dimsProviderOptions('openai-compatible', 'qwen3-embedding:4b', 768, undefined, 'ollama'))
+      .toEqual({ openaiCompatible: { dimensions: 768 } });
+    expect(dimsProviderOptions('openai-compatible', 'qwen3-embedding:4b', 1024, undefined, 'ollama'))
+      .toEqual({ openaiCompatible: { dimensions: 1024 } });
+    // Recipe-default model on Ollama gets its width pinned too.
+    expect(dimsProviderOptions('openai-compatible', 'nomic-embed-text', 768, undefined, 'ollama'))
+      .toEqual({ openaiCompatible: { dimensions: 768 } });
+  });
+
+  test('providerId is back-compat: omitting it keeps the pre-Ollama behavior', () => {
+    // Same model, no providerId → no dim param (unchanged contract).
+    expect(dimsProviderOptions('openai-compatible', 'nomic-embed-text', 768)).toBeUndefined();
+  });
+
   test('Voyage flexible-dim models return dimensions for the SDK shim', () => {
     const opts = dimsProviderOptions('openai-compatible', 'voyage-3-large', 1024);
     expect(opts).toEqual({ openaiCompatible: { dimensions: 1024 } });

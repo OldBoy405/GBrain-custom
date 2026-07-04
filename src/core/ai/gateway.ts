@@ -1391,6 +1391,7 @@ export async function embed(texts: string[], opts?: EmbedOpts): Promise<Float32A
     modelId,
     effectiveDims,
     opts?.inputType,
+    recipe.id,
   );
   const expected = effectiveDims;
 

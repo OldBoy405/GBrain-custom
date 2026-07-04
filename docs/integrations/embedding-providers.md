@@ -143,17 +143,31 @@ No env required — Ollama runs unauthenticated locally. Optional `OLLAMA_BASE_U
 
 Recipe ships with `nomic-embed-text` (768d, recommended), `mxbai-embed-large` (1024d), `all-minilm` (384d). `gbrain providers test --model ollama:nomic-embed-text` smoke-tests the local install.
 
+**Any pulled model + custom dimensions.** The `models` list above is advisory — Ollama serves whatever you `ollama pull`, so `--embedding-model ollama:<any-model>` is accepted. Because Ollama's OpenAI-compatible `/v1/embeddings` endpoint honors the `dimensions` field, you can also pin a custom width via `--embedding-dimensions <N>` (any integer up to the pgvector column cap). gbrain sends that same `dimensions` value on every embed request, so Matryoshka models (e.g. `qwen3-embedding:4b`, native 2560, truncatable 32–2560) land at exactly the width baked into the schema:
+
+```bash
+ollama pull qwen3-embedding:4b
+gbrain reinit-pglite --embedding-model ollama:qwen3-embedding:4b --embedding-dimensions 768 --yes
+gbrain providers test --model ollama:qwen3-embedding:4b
+```
+
+Pick ≤2000 dims (e.g. 768 / 1024) to keep the HNSW index; higher widths (e.g. the native 2560) fall back to exact vector scans. If you declare a width a **fixed-dimension** model can't produce, init still passes but the first embed fails loud with `returned N but schema expects M` — re-init at the model's real width.
+
 ### llama-server (local, llama.cpp)
 
 `llama.cpp`'s `llama-server --embeddings` endpoint. No env required. Optional `LLAMA_SERVER_BASE_URL` (default `http://localhost:8080/v1`) and `LLAMA_SERVER_API_KEY`.
 
 User-driven models: launch llama-server with `--model <gguf-path> --embeddings`, then run `gbrain init --embedding-model llama-server:<your-id> --embedding-dimensions <N>`. The recipe refuses the implicit shorthand `--model llama-server` because there's no canonical first model.
 
+`--embedding-dimensions <N>` accepts any width up to the pgvector column cap — set it to the width the launched model actually emits. Unlike Ollama, gbrain does **not** send a `dimensions` field on the embed request (llama.cpp serves a fixed width from its launch config and doesn't Matryoshka-truncate), so a declared width that disagrees with the model's real output surfaces fail-loud at first embed.
+
 ### LiteLLM proxy (universal escape hatch)
 
 Run [LiteLLM](https://docs.litellm.ai/docs/proxy/quick_start) in front of any provider — Bedrock, Vertex, Cohere, Jina, Fireworks, OctoAI, etc. The proxy normalizes everything to the OpenAI-compatible API; gbrain points at the proxy via `LITELLM_BASE_URL` and proxies the call.
 
 This is the catch-all for "my provider isn't in the list above." Set up LiteLLM, then `gbrain init --embedding-model litellm:<your-model-id> --embedding-dimensions <N>`.
+
+`--embedding-dimensions <N>` accepts any width up to the pgvector column cap — set it to the width your proxied backend emits. gbrain does **not** force a `dimensions` field on the embed request (the proxied backend decides its own width, and some fixed-dim backends reject the param), so a declared width that disagrees with the backend's real output surfaces fail-loud at first embed. If your backend is a Matryoshka model you want truncated, configure the reduction on the LiteLLM side and declare the reduced width here.
 
 ## Choosing dimensions
 
