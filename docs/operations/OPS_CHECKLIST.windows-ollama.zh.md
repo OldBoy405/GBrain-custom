@@ -1,7 +1,8 @@
 # GBrain 个人运维清单（Windows + Ollama + Qwen3）
 
 > 面向本机 PGLite + `ollama:qwen3-embedding:4b` @ **1024 维** 的日常运维速查。  
-> 完整说明见 [`OPS_MANUAL.zh.md`](OPS_MANUAL.zh.md)。
+> 完整说明见 [`OPS_MANUAL.zh.md`](OPS_MANUAL.zh.md)。  
+> DeepSeek Chat、Tier 注入优先级、Schema Pack / Takes / Reranker 见手册 [**§8**](OPS_MANUAL.zh.md#8-模型-tier可选升级与检索精排)。
 
 ---
 

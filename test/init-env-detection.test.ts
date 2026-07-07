@@ -96,6 +96,11 @@ describe('groupReadyByProvider — expansion touchpoint', () => {
     const got = await groupReadyByProvider('expansion', { VOYAGE_API_KEY: 'pa-test' });
     expect(got.map(p => p.recipeId)).not.toContain('voyage');
   });
+
+  test('DEEPSEEK_API_KEY → deepseek expansion ready', async () => {
+    const got = await groupReadyByProvider('expansion', { DEEPSEEK_API_KEY: 'sk-test' });
+    expect(got.map(p => p.recipeId)).toContain('deepseek');
+  });
 });
 
 describe('findEnvKeyTypos', () => {

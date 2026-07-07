@@ -9,7 +9,7 @@
  * import it from `../../src/cli.ts`.
  *
  * The single ownership site for: (a) folding file-plane API keys
- * (openai/anthropic/zeroentropy) into the gateway env, and (b) threading
+ * (openai/anthropic/zeroentropy/deepseek) into the gateway env, and (b) threading
  * local-server `*_BASE_URL` env vars into base_urls. Both matter for the
  * init-time embedding-key probe — without (a) it would false-warn on
  * config.json-keyed users, and without (b) a live probe could hit the wrong
@@ -34,6 +34,7 @@ export function buildGatewayConfig(c: GBrainConfig): AIGatewayConfig {
   // plane field now exists (GBrainConfig type) and gets mapped here, so
   // setting it via `~/.gbrain/config.json` propagates into the gateway.
   if (c.zeroentropy_api_key) envFromConfig.ZEROENTROPY_API_KEY = c.zeroentropy_api_key;
+  if (c.deepseek_api_key) envFromConfig.DEEPSEEK_API_KEY = c.deepseek_api_key;
 
   // v0.32 codex finding #4+#5 fix: thread local-server _BASE_URL env vars
   // into base_urls so the gateway hits the user's configured port. Without
@@ -52,6 +53,7 @@ export function buildGatewayConfig(c: GBrainConfig): AIGatewayConfig {
   if (process.env.LMSTUDIO_BASE_URL) envBaseUrls['lmstudio'] = process.env.LMSTUDIO_BASE_URL;
   if (process.env.LITELLM_BASE_URL) envBaseUrls['litellm'] = process.env.LITELLM_BASE_URL;
   if (process.env.OPENROUTER_BASE_URL) envBaseUrls['openrouter'] = process.env.OPENROUTER_BASE_URL;
+  if (process.env.DEEPSEEK_BASE_URL) envBaseUrls['deepseek'] = process.env.DEEPSEEK_BASE_URL;
 
   return {
     embedding_model: c.embedding_model,

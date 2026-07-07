@@ -26,6 +26,7 @@ describe('INHERIT_NAME_RE', () => {
     'voyage_api_key',
     'groq_api_key',
     'zeroentropy_api_key',
+    'deepseek_api_key',
     'remote_mcp_oauth_client_secret',
     'field2',
     'a',
@@ -66,6 +67,9 @@ describe('deriveEnvKey', () => {
   });
   test('groq_api_key → GROQ_API_KEY', () => {
     expect(deriveEnvKey('groq_api_key')).toBe('GROQ_API_KEY');
+  });
+  test('deepseek_api_key → DEEPSEEK_API_KEY', () => {
+    expect(deriveEnvKey('deepseek_api_key')).toBe('DEEPSEEK_API_KEY');
   });
   test('arbitrary_field → ARBITRARY_FIELD (default uppercase)', () => {
     expect(deriveEnvKey('arbitrary_field')).toBe('ARBITRARY_FIELD');

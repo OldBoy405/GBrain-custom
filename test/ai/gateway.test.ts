@@ -110,6 +110,14 @@ describe('gateway.isAvailable (silent-drop regression surface)', () => {
     });
     expect(isAvailable('expansion')).toBe(true);
   });
+
+  test('expansion available when DEEPSEEK_API_KEY set for deepseek-v4-flash', () => {
+    configureGateway({
+      expansion_model: 'deepseek:deepseek-v4-flash',
+      env: { DEEPSEEK_API_KEY: 'fake' },
+    });
+    expect(isAvailable('expansion')).toBe(true);
+  });
 });
 
 describe('model-resolver', () => {

@@ -28,6 +28,11 @@ describe('CANONICAL_PRICING — table integrity', () => {
       expect(Number.isFinite(p.output)).toBe(true);
       expect(p.input).toBeGreaterThan(0);
       expect(p.output).toBeGreaterThan(0);
+      if (p.input_cache_hit !== undefined) {
+        expect(Number.isFinite(p.input_cache_hit)).toBe(true);
+        expect(p.input_cache_hit).toBeGreaterThan(0);
+        expect(p.input_cache_hit).toBeLessThan(p.input);
+      }
       // Provider-prefixed key (sanity guard against a bare key sneaking in).
       // NOTE: deliberately NO output>=input invariant — symmetric pricing is
       // legitimate (e.g. together:...Llama-3.3 is 0.88/0.88).
@@ -47,6 +52,22 @@ describe('CANONICAL_PRICING — table integrity', () => {
     expect(CANONICAL_PRICING['google:gemini-2.0-flash']).toEqual({ input: 0.1, output: 0.4 });
     expect(CANONICAL_PRICING['google:gemini-2-flash']).toEqual(
       CANONICAL_PRICING['google:gemini-2.0-flash'],
+    );
+  });
+
+  test('DeepSeek V4 flash + pro priced from official API table', () => {
+    expect(CANONICAL_PRICING['deepseek:deepseek-v4-flash']).toEqual({
+      input: 0.14,
+      output: 0.28,
+      input_cache_hit: 0.0028,
+    });
+    expect(CANONICAL_PRICING['deepseek:deepseek-v4-pro']).toEqual({
+      input: 0.435,
+      output: 0.87,
+      input_cache_hit: 0.003625,
+    });
+    expect(CANONICAL_PRICING['deepseek:deepseek-chat']).toEqual(
+      CANONICAL_PRICING['deepseek:deepseek-v4-flash'],
     );
   });
 });
@@ -116,6 +137,8 @@ describe('DRIFT GUARD — derived views stay equal to canonical (re-hardcode tri
       'google:gemini-2.0-flash',
       'together:meta-llama/Llama-3.3-70B-Instruct-Turbo',
       'deepseek:deepseek-chat',
+      'deepseek:deepseek-v4-flash',
+      'deepseek:deepseek-v4-pro',
     ]) {
       expect(canonicalLookup(id)).toBeDefined();
     }

@@ -25,6 +25,8 @@
  *   - Anthropic: https://platform.claude.com/docs/en/about-claude/models/overview
  *   - OpenAI:    https://openai.com/api/pricing
  *   - Google:    https://ai.google.dev/gemini-api/docs/pricing
+ *   - DeepSeek:  https://api-docs.deepseek.com/quick_start/pricing (2026-07-04;
+ *                `input` = cache-miss, optional `input_cache_hit` = Context Caching on Disk)
  * The dream-budget audit JSONL snapshots the rate per call, so historical
  * estimates stay reproducible even after this table changes.
  *
@@ -37,10 +39,16 @@
 import { splitProviderModelId } from './model-id.ts';
 
 export interface ModelPricing {
-  /** USD per 1M input tokens. */
+  /** USD per 1M input tokens (cache-miss rate where provider splits billing). */
   input: number;
   /** USD per 1M output tokens. */
   output: number;
+  /**
+   * USD per 1M cache-hit input tokens when the provider bills separately
+   * (DeepSeek V4 Context Caching on Disk: `prompt_cache_hit_tokens`).
+   * Absent → callers treat all input at `input` (conservative / unknown split).
+   */
+  input_cache_hit?: number;
 }
 
 /**
@@ -80,7 +88,10 @@ export const CANONICAL_PRICING: Record<string, ModelPricing> = {
 
   // ── Together / DeepSeek (cross-modal-eval panel) ───────────────────────
   'together:meta-llama/Llama-3.3-70B-Instruct-Turbo': { input: 0.88, output: 0.88 },
-  'deepseek:deepseek-chat':               { input:  0.14, output:  0.28 },
+  // Legacy alias routes to v4-flash non-thinking mode (DeepSeek API docs).
+  'deepseek:deepseek-chat':               { input:  0.14,   output: 0.28,  input_cache_hit: 0.0028 },
+  'deepseek:deepseek-v4-flash':           { input:  0.14,   output: 0.28,  input_cache_hit: 0.0028 },
+  'deepseek:deepseek-v4-pro':             { input:  0.435,  output: 0.87,  input_cache_hit: 0.003625 },
 };
 
 /**

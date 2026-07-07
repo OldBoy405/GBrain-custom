@@ -29,6 +29,7 @@ const PASSTHROUGHS: Array<{ envVar: string; recipeId: string }> = [
   { envVar: 'LMSTUDIO_BASE_URL', recipeId: 'lmstudio' },
   { envVar: 'LITELLM_BASE_URL', recipeId: 'litellm' },
   { envVar: 'OPENROUTER_BASE_URL', recipeId: 'openrouter' },
+  { envVar: 'DEEPSEEK_BASE_URL', recipeId: 'deepseek' },
 ];
 
 const TEST_VALUE = 'http://proxy.example.test/v1';
@@ -81,6 +82,39 @@ describe('buildGatewayConfig env-baseURL passthrough', () => {
           provider_base_urls: { openrouter: 'http://config.example/v1' },
         } as unknown as GBrainConfig);
         expect(cfg.base_urls?.openrouter).toBe('http://config.example/v1');
+      },
+    );
+  });
+});
+
+describe('buildGatewayConfig file-plane API key injection', () => {
+  test('deepseek_api_key maps to DEEPSEEK_API_KEY when env unset', async () => {
+    await withEnv(
+      {
+        DEEPSEEK_API_KEY: undefined,
+        OPENAI_API_KEY: undefined,
+        ANTHROPIC_API_KEY: undefined,
+        ZEROENTROPY_API_KEY: undefined,
+      },
+      async () => {
+        const cfg = buildGatewayConfig({
+          engine: 'pglite',
+          deepseek_api_key: 'sk-from-config',
+        } as unknown as GBrainConfig);
+        expect(cfg.env?.DEEPSEEK_API_KEY).toBe('sk-from-config');
+      },
+    );
+  });
+
+  test('process.env DEEPSEEK_API_KEY wins over config file', async () => {
+    await withEnv(
+      { DEEPSEEK_API_KEY: 'sk-from-env' },
+      async () => {
+        const cfg = buildGatewayConfig({
+          engine: 'pglite',
+          deepseek_api_key: 'sk-from-config',
+        } as unknown as GBrainConfig);
+        expect(cfg.env?.DEEPSEEK_API_KEY).toBe('sk-from-env');
       },
     );
   });
