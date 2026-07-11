@@ -5505,6 +5505,29 @@ export const MIGRATIONS: Migration[] = [
         WHERE dimension IS NOT NULL;
     `,
   },
+  {
+    version: 123,
+    name: 'inbox_workflow_frontmatter',
+    // Inbox workflow state deliberately lives on pages, not in a second queue
+    // table. Existing inbox/* pages predate the workflow metadata; backfill a
+    // raw snapshot and an explicit legacy marker without inventing provenance.
+    idempotent: true,
+    sql: `
+      UPDATE pages
+      SET frontmatter = COALESCE(frontmatter, '{}'::jsonb) || jsonb_build_object(
+        'raw_content', COALESCE(frontmatter->'raw_content', to_jsonb(compiled_truth)),
+        'inbox_status', COALESCE(frontmatter->'inbox_status', '"pending_frontmatter"'::jsonb),
+        'inbox_legacy_source', COALESCE(frontmatter->'inbox_legacy_source', 'true'::jsonb)
+      )
+      WHERE slug LIKE 'inbox/%'
+        AND deleted_at IS NULL
+        AND (
+          NOT (COALESCE(frontmatter, '{}'::jsonb) ? 'raw_content')
+          OR NOT (COALESCE(frontmatter, '{}'::jsonb) ? 'inbox_status')
+          OR NOT (COALESCE(frontmatter, '{}'::jsonb) ? 'inbox_legacy_source')
+        );
+    `,
+  },
 ];
 
 export const LATEST_VERSION = MIGRATIONS.length > 0

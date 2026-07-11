@@ -70,12 +70,14 @@ export function parseModelJSON(raw: string): ParsedModelResult {
   throw new Error('parseModelJSON: all repair strategies failed');
 }
 
-function stripFences(s: string): string {
+/** Strip a ```/```json fence wrapper if present, else return the input unchanged. */
+export function stripFences(s: string): string {
   const m = s.match(FENCE_RE);
   return m ? m[1]! : s;
 }
 
-function tryParse(s: string): unknown | null {
+/** `JSON.parse` that returns null instead of throwing. */
+export function tryParse(s: string): unknown | null {
   try {
     return JSON.parse(s);
   } catch {
@@ -83,7 +85,8 @@ function tryParse(s: string): unknown | null {
   }
 }
 
-function repairJson(s: string): string {
+/** Best-effort fixups for common LLM-JSON mistakes (trailing commas, single quotes, raw newlines). */
+export function repairJson(s: string): string {
   return (
     s
       // Trailing commas before } or ]

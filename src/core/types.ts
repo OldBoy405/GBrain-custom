@@ -332,6 +332,65 @@ export interface PageFilters {
   sourceIds?: string[];
 }
 
+// Inbox workflow (admin + MCP). Content remains canonical in `pages`; these
+// types are a projection over inbox/* pages and their frontmatter state.
+export const INBOX_STATUSES = [
+  'pending_frontmatter',
+  'pending_typed_link',
+  'merging',
+  'merged',
+  // Terminal error state. A failed enrichment lands here (NOT back on a
+  // workflow stage like pending_typed_link) so the UI can distinguish
+  // "awaiting enrichment" from "enrichment errored and rolled back".
+  // `inbox_error` carries the message; re-triggering clears it.
+  'failed',
+] as const;
+export type InboxStatus = typeof INBOX_STATUSES[number];
+
+export const INBOX_TIERS = ['T1', 'T2', 'T3'] as const;
+export type InboxTier = typeof INBOX_TIERS[number];
+
+export interface InboxItem {
+  slug: string;
+  source_id: string;
+  type: PageType;
+  title: string;
+  updated_at: Date;
+  source_kind: string | null;
+  source_uri: string | null;
+  ingested_at: Date | null;
+  status: InboxStatus;
+  tier: InboxTier | null;
+  job_id: number | null;
+  error: string | null;
+  preview: string;
+}
+
+export interface InboxListResult {
+  items: InboxItem[];
+  stats: {
+    total: number;
+    /** Items eligible to enrich now: pending_* or failed (excludes merging + merged). */
+    pending_enrich: number;
+    merging: number;
+    merged: number;
+    failed: number;
+    /**
+     * True when `total` and the per-status counts were computed over a capped
+     * scan (the brain holds more inbox/* pages than the stats scan window).
+     * The UI renders "N+" rather than an exact total in that case.
+     */
+    capped: boolean;
+  };
+}
+
+export interface InboxDetail extends InboxItem {
+  raw_content: string;
+  enriched_content: string;
+  frontmatter: Record<string, unknown>;
+  typed_links: Link[];
+}
+
 /** v0.26.5 — opts for getPage / softDeletePage / restorePage. */
 export interface GetPageOpts {
   /** Filter to a specific source. When omitted, getPage returns the first slug match across sources (pre-existing semantics). */

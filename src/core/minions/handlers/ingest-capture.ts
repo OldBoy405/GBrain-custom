@@ -34,6 +34,7 @@ import type { BrainEngine } from '../../engine.ts';
 import type { IngestionEvent } from '../../ingestion/types.ts';
 import { validateIngestionEvent } from '../../ingestion/types.ts';
 import { importFromContent } from '../../import-file.ts';
+import { isInboxSlug, prepareInboxCaptureContent } from '../../inbox.ts';
 
 export interface IngestCaptureResult {
   slug: string;
@@ -113,7 +114,23 @@ export function makeIngestCaptureHandler(engine: BrainEngine) {
     // by passing { noEmbed: false } in job.data.
     const noEmbed = (data as { noEmbed?: unknown }).noEmbed !== false;
 
-    const result = await importFromContent(engine, slug, event.content, { noEmbed });
+    const content = isInboxSlug(slug)
+      ? prepareInboxCaptureContent(event.content, {
+          sourceKind: event.source_kind,
+          receivedAt: event.received_at,
+          metadata:
+            event.metadata && typeof event.metadata === 'object'
+              ? (event.metadata as Record<string, unknown>)
+              : undefined,
+        })
+      : event.content;
+
+    const result = await importFromContent(engine, slug, content, {
+      noEmbed,
+      source_kind: event.source_kind,
+      source_uri: event.source_uri,
+      ingested_via: event.source_kind,
+    });
 
     return {
       slug,

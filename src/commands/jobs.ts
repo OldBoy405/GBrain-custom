@@ -1839,6 +1839,8 @@ export async function registerBuiltinHandlers(
   // ============================================================
   const { makeIngestCaptureHandler } = await import('../core/minions/handlers/ingest-capture.ts');
   worker.register('ingest_capture', makeIngestCaptureHandler(engine));
+  const { makeInboxEnrichHandler } = await import('../core/minions/handlers/inbox-enrich.ts');
+  worker.register('inbox_enrich', makeInboxEnrichHandler(engine));
 
   // ============================================================
   // v0.36+ brain-health-100 wave: 11 new handlers for autonomous

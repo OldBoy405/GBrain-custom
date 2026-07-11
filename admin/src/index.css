@@ -16,9 +16,21 @@
   --font-sans: 'Inter', system-ui, sans-serif;
 }
 
-* { margin: 0; padding: 0; box-sizing: border-box; }
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* Ops 暗色页 reset。Brain 浅色子树（data-surface=brain）走 tailwind @layer，不能被全局 padding:0 抹掉。 */
+.app,
+.app *,
+.login-page,
+.login-page * {
+  margin: 0;
+  padding: 0;
+}
 
 body {
+  margin: 0;
   font-family: var(--font-sans);
   background: var(--bg-primary);
   color: var(--text-primary);
@@ -107,7 +119,7 @@ td {
   font-size: 13px;
   border-top: 1px solid #1a1a2a;
 }
-tr:hover td { background: var(--bg-tertiary); }
+.app tr:hover td { background: var(--bg-tertiary); }
 
 /* Badges */
 .badge {
@@ -152,8 +164,13 @@ tr:hover td { background: var(--bg-tertiary); }
 .btn-danger { background: transparent; color: var(--error); border: 1px solid var(--error); }
 .btn-danger:hover { background: rgba(239,68,68,0.1); }
 
-/* Forms */
-input, select {
+/* Forms —— 仅 Ops / Login / Modal；Brain 浅色子树走 tailwind.css，勿用全局 input 选择器 */
+.app input,
+.app select,
+.login-page input,
+.login-page select,
+.modal input,
+.modal select {
   background: var(--bg-primary);
   border: 1px solid #333;
   color: var(--text-primary);
@@ -163,12 +180,19 @@ input, select {
   font-family: var(--font-sans);
   width: 100%;
 }
-input:focus, select:focus {
+.app input:focus,
+.app select:focus,
+.login-page input:focus,
+.login-page select:focus,
+.modal input:focus,
+.modal select:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(59,130,246,0.2);
 }
-input::placeholder { color: var(--text-muted); }
+.app input::placeholder,
+.login-page input::placeholder,
+.modal input::placeholder { color: var(--text-muted); }
 label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
 
 /* Modal */

@@ -160,6 +160,23 @@ describe('ingest_capture handler — validation + routing', () => {
     expect(result.source_kind).toBe('inbox-folder');
     expect(result.source_uri).toBe('/Users/test/.gbrain/inbox/note.md');
   });
+
+  test('default inbox capture persists provenance and workflow frontmatter', async () => {
+    const handler = makeIngestCaptureHandler(engine);
+    const ev = makeEvent({
+      content: '# Captured\n\nraw body',
+      source_kind: 'inbox-folder',
+      source_uri: '/tmp/inbox/note.md',
+      metadata: { channel: 'drop' },
+    });
+    const result = await handler(makeJob({ event: ev }));
+    const page = await engine.getPage(result.slug);
+    expect(page?.source_kind).toBe('inbox-folder');
+    expect(page?.source_uri).toBe('/tmp/inbox/note.md');
+    expect(page?.frontmatter.inbox_status).toBe('pending_frontmatter');
+    expect(page?.frontmatter.raw_content).toContain('raw body');
+    expect(page?.frontmatter.ingestion_metadata).toEqual({ channel: 'drop' });
+  });
 });
 
 describe('ingest_capture handler — integration with importFromContent', () => {

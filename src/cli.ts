@@ -855,7 +855,11 @@ export function formatResult(opName: string, result: unknown): string {
     }
     case 'search':
     case 'query': {
-      const results = result as any[];
+      // v0.43.x fork: `query --trace` returns `{ results, trace }` instead of
+      // a bare array (operations.ts opt-in `trace` param). Unwrap defensively
+      // so the CLI text formatter never crashes on `.map` for that shape;
+      // `search` never sets `trace` so this is a no-op there.
+      const results = (Array.isArray(result) ? result : (result as any)?.results) as any[];
       if (results.length === 0) return 'No results.\n';
       // v0.40.4 — --explain switches to per-stage attribution formatter.
       // Reads CliOptions.explain via the module-level singleton.

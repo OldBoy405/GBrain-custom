@@ -58,12 +58,22 @@ type Section = (typeof VALID_SECTIONS)[number];
 // Types
 // ---------------------------------------------------------------------------
 
+/** One phase row from `result.report.phases` (shared with the internal cycle-row scan shape). */
+export type CyclePhase = { phase: string; status: string; duration_ms: number; summary: string };
+
 export interface CycleRow {
   finished_at: string | null;
   name: string;
   status: string;
   duration_ms: number | null;
   totals: Record<string, unknown> | null;
+  /**
+   * v0.43.x fork: per-phase real duration_ms, projected straight from
+   * `result.report.phases` (already computed by `runCycle` in cycle.ts —
+   * zero new computation, zero migration). Null when the job predates this
+   * projection or the phases array is absent from the stored result.
+   */
+  phases: CyclePhase[] | null;
 }
 
 export interface CycleSnapshot {
@@ -168,7 +178,15 @@ export async function buildCycleSnapshot(engine: BrainEngine): Promise<CycleSnap
     name: string;
     status: string;
     started_at: string | Date | null;
-    result: { partial?: unknown; status?: unknown; report?: { totals?: Record<string, unknown> } } | null;
+    result: {
+      partial?: unknown;
+      status?: unknown;
+      report?: {
+        totals?: Record<string, unknown>;
+        /** Fork addition: real per-phase result, sourced from `PhaseResult[]` in cycle.ts. */
+        phases?: CyclePhase[];
+      };
+    } | null;
   };
 
   const isoOrNull = (v: string | Date | null): string | null => {
@@ -191,6 +209,7 @@ export async function buildCycleSnapshot(engine: BrainEngine): Promise<CycleSnap
       status: r.status,
       duration_ms: durationMs(r.started_at, r.finished_at),
       totals: r.result?.report?.totals ?? null,
+      phases: r.result?.report?.phases ?? null,
     };
   };
 

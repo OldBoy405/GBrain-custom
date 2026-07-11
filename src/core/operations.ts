@@ -8,8 +8,21 @@ import { resolve, relative, sep } from 'path';
 import type { BrainEngine } from './engine.ts';
 import { clampSearchLimit } from './engine.ts';
 import type { GBrainConfig } from './config.ts';
-import type { PageType } from './types.ts';
+import type { InboxStatus, InboxTier, PageType } from './types.ts';
+import { INBOX_STATUSES } from './types.ts';
 import { importFromContent } from './import-file.ts';
+import { computeContentHash } from './ingestion/types.ts';
+import matter from 'gray-matter';
+import { groupConflicts, type ConflictGroupCore } from './conflicts.ts';
+import { compileTruth } from './compile-truth.ts';
+import {
+  inboxStatus,
+  inboxTier,
+  isInboxSlug,
+  pageToInboxDetail,
+  pageToInboxItem,
+  patchInboxFrontmatter,
+} from './inbox.ts';
 import { writePageThrough } from './write-through.ts';
 import { hybridSearch, hybridSearchCached, stampContentFlags } from './search/hybrid.ts';
 import { expandQuery } from './search/expansion.ts';
@@ -1112,7 +1125,7 @@ const put_page: Operation = {
  * counted; the overall function never throws (catch in put_page handler covers
  * extraction errors).
  */
-async function runAutoLink(
+export async function runAutoLink(
   engine: BrainEngine,
   slug: string,
   parsed: { type: PageType; compiled_truth: string; timeline: string; frontmatter: Record<string, unknown> },
@@ -1414,6 +1427,252 @@ const list_pages: Operation = {
   cliHints: { name: 'list' },
 };
 
+// --- Inbox workflow ---
+
+// Stats scan window. Aggregate counts (total/pending_enrich/…) are computed over
+// up to this many inbox/* pages — decoupled from the item display `limit` so the
+// counts don't silently cap at the page size. When the brain holds more inbox
+// pages than this, `stats.capped` is set and the UI renders "N+". A true GROUP BY
+// COUNT aggregate is the billion-scale follow-up (needs a scoped engine method +
+// parity); this window keeps counts honest for realistic triage volumes.
+const INBOX_STATS_SCAN = 2000;
+
+const list_inbox: Operation = {
+  name: 'list_inbox',
+  description: 'List inbox/* pages with deterministic enrichment workflow state and aggregate counts.',
+  params: {
+    status: { type: 'string', enum: [...INBOX_STATUSES] },
+    source_kind: { type: 'string', description: 'Filter by ingestion source kind' },
+    tier: { type: 'string', enum: ['T1', 'T2', 'T3'] },
+    limit: { type: 'number', description: 'Max results (default 50, max 100)' },
+    sort: {
+      type: 'string',
+      enum: [...LIST_PAGES_SORT_VALUES],
+      description: 'Sort order (default updated_desc)',
+    },
+  },
+  scope: 'read',
+  handler: async (ctx, p) => {
+    const rawSort = p.sort as string | undefined;
+    const sort = rawSort && (LIST_PAGES_SORT_VALUES as readonly string[]).includes(rawSort)
+      ? (rawSort as ListPagesSort)
+      : undefined;
+    // Fetch one past the scan window so an exact-INBOX_STATS_SCAN brain isn't
+    // misreported as capped: SQL LIMIT means `pages.length` alone can never
+    // exceed the requested limit, so distinguishing "exactly N" from "more
+    // than N" requires asking for N+1 and slicing back down.
+    const pages = await ctx.engine.listPages({
+      slugPrefix: 'inbox/',
+      limit: INBOX_STATS_SCAN + 1,
+      sort,
+      ...sourceScopeOpts(ctx),
+    });
+    const capped = pages.length > INBOX_STATS_SCAN;
+    const allItems = (capped ? pages.slice(0, INBOX_STATS_SCAN) : pages).map(pageToInboxItem);
+    let merging = 0;
+    let merged = 0;
+    let failed = 0;
+    for (const item of allItems) {
+      if (item.status === 'merging') merging++;
+      else if (item.status === 'merged') merged++;
+      else if (item.status === 'failed') failed++;
+    }
+    const stats = {
+      total: allItems.length,
+      // Eligible to enrich now: everything that isn't in-flight or already done
+      // (pending_frontmatter, pending_typed_link, failed). Excludes `merging`.
+      pending_enrich: allItems.length - merging - merged,
+      merging,
+      merged,
+      failed,
+      capped,
+    };
+    const status = p.status as InboxStatus | undefined;
+    const tier = p.tier as InboxTier | undefined;
+    const sourceKind = typeof p.source_kind === 'string' ? p.source_kind : undefined;
+    const limit = clampSearchLimit(p.limit as number | undefined, 50, 100);
+    const items = allItems
+      .filter(item => !status || item.status === status)
+      .filter(item => !tier || item.tier === tier)
+      .filter(item => !sourceKind || item.source_kind === sourceKind)
+      .slice(0, limit);
+    return { items, stats };
+  },
+};
+
+const get_inbox_item: Operation = {
+  name: 'get_inbox_item',
+  description: 'Get one inbox item with raw/enriched content and typed links.',
+  params: {
+    slug: { type: 'string', required: true },
+  },
+  scope: 'read',
+  handler: async (ctx, p) => {
+    const slug = p.slug as string;
+    if (!isInboxSlug(slug)) {
+      throw new OperationError('invalid_params', 'Inbox slug must start with inbox/');
+    }
+    const page = await ctx.engine.getPage(slug, sourceScopeOpts(ctx));
+    if (!page) throw new OperationError('page_not_found', `Page not found: ${slug}`);
+    const [tags, links] = await Promise.all([
+      ctx.engine.getTags(slug, { sourceId: page.source_id }),
+      ctx.engine.getLinks(slug, linkReadScopeOpts(ctx)),
+    ]);
+    return pageToInboxDetail(page, tags, links);
+  },
+};
+
+/** Validate + dedupe the bulk `slugs` param shared by trigger_inbox_enrichment / discard_inbox_items. */
+function parseInboxSlugsParam(raw: unknown): string[] {
+  const slugs = [...new Set(
+    (Array.isArray(raw) ? raw : []).filter((v): v is string => typeof v === 'string'),
+  )];
+  if (slugs.length === 0 || slugs.length > 50 || slugs.some(slug => !isInboxSlug(slug))) {
+    throw new OperationError('invalid_params', 'slugs must contain 1-50 unique inbox/ slugs');
+  }
+  return slugs;
+}
+
+/** Shared "entering merging" frontmatter patch — built once, used at both call sites below. */
+function inboxMergingPatch(jobId: number, tier: InboxTier | undefined): Record<string, unknown> {
+  return {
+    inbox_status: 'merging',
+    inbox_job_id: jobId,
+    inbox_error: null,
+    ...(tier ? { enrichment_tier: tier } : {}),
+  };
+}
+
+const trigger_inbox_enrichment: Operation = {
+  name: 'trigger_inbox_enrichment',
+  description: 'Queue deterministic, zero-LLM enrichment for inbox pages.',
+  params: {
+    slugs: { type: 'array', required: true, items: { type: 'string' } },
+    tier: { type: 'string', enum: ['T1', 'T2', 'T3'] },
+  },
+  mutating: true,
+  scope: 'write',
+  handler: async (ctx, p) => {
+    const slugs = parseInboxSlugsParam(p.slugs);
+    if (ctx.dryRun) return { dry_run: true, action: 'trigger_inbox_enrichment', slugs };
+
+    const { MinionQueue } = await import('./minions/queue.ts');
+    const queue = new MinionQueue(ctx.engine);
+    const accepted: Array<{ slug: string; job_id: number; status: string }> = [];
+    const skipped: Array<{ slug: string; reason: string }> = [];
+    const tier = p.tier as InboxTier | undefined;
+
+    // Independent lookups — batch instead of one round trip per slug.
+    const pages = await Promise.all(slugs.map(slug => ctx.engine.getPage(slug, sourceScopeOpts(ctx))));
+
+    for (let i = 0; i < slugs.length; i++) {
+      const slug = slugs[i];
+      const page = pages[i];
+      if (!page) {
+        skipped.push({ slug, reason: 'not_found_or_out_of_scope' });
+        continue;
+      }
+      const raw = typeof page.frontmatter?.raw_content === 'string'
+        ? page.frontmatter.raw_content
+        : page.compiled_truth;
+      const revision = computeContentHash(raw).slice(0, 16);
+      let job = await queue.add(
+        'inbox_enrich',
+        { slug, source_id: page.source_id },
+        {
+          max_attempts: 3,
+          // Give this handler a small window to persist job_id/status before a
+          // worker can claim the row. Avoids a fast worker completing and then
+          // being overwritten back to "merging" by the submit path.
+          delay: 250,
+          idempotency_key: `inbox-enrich:${page.source_id}:${slug}:${revision}`,
+        },
+      );
+      if (job.status === 'failed' || job.status === 'dead') {
+        await patchInboxFrontmatter(ctx.engine, page, inboxMergingPatch(job.id, tier));
+        job = (await queue.retryJob(job.id)) ?? job;
+      }
+      if (job.status === 'completed') {
+        skipped.push({ slug, reason: 'already_enriched_for_revision' });
+        continue;
+      }
+      if (job.status !== 'active' && job.status !== 'waiting') {
+        await patchInboxFrontmatter(ctx.engine, page, inboxMergingPatch(job.id, tier));
+      }
+      accepted.push({ slug, job_id: job.id, status: job.status });
+    }
+    return { accepted, skipped };
+  },
+};
+
+const discard_inbox_items: Operation = {
+  name: 'discard_inbox_items',
+  description:
+    'Discard inbox pages in a bounded batch. mode=soft (default) hides pages for 72h and allows restore_page; ' +
+    'mode=hard permanently deletes pages and cascaded graph data and requires confirm_destructive:true ' +
+    '(mirrors sources_remove — irreversible, so it needs an explicit ack even though the op itself stays write-scoped/remote-reachable).',
+  params: {
+    slugs: { type: 'array', required: true, items: { type: 'string' } },
+    mode: {
+      type: 'string',
+      enum: ['soft', 'hard'],
+      description: 'soft=recoverable via restore_page (default); hard=permanent delete',
+    },
+    confirm_destructive: {
+      type: 'boolean',
+      description: 'Required when mode=hard. Without it the op refuses (soft mode ignores this param).',
+    },
+  },
+  mutating: true,
+  scope: 'write',
+  handler: async (ctx, p) => {
+    const slugs = parseInboxSlugsParam(p.slugs);
+    const mode = p.mode === 'hard' ? 'hard' : 'soft';
+    if (mode === 'hard' && p.confirm_destructive !== true) {
+      throw new OperationError(
+        'invalid_params',
+        'mode=hard permanently deletes pages — pass confirm_destructive:true to proceed',
+      );
+    }
+    if (ctx.dryRun) return { dry_run: true, action: 'discard_inbox_items', slugs, mode };
+
+    // Independent lookups — batch instead of one round trip per slug.
+    const pages = await Promise.all(slugs.map(slug => ctx.engine.getPage(slug, sourceScopeOpts(ctx))));
+
+    const discarded: string[] = [];
+    const failed: Array<{ slug: string; reason: string }> = [];
+    for (let i = 0; i < slugs.length; i++) {
+      const slug = slugs[i];
+      const page = pages[i];
+      if (!page) {
+        failed.push({ slug, reason: 'not_found_or_out_of_scope' });
+        continue;
+      }
+      if (mode === 'hard') {
+        // Best-effort race mitigation: don't hard-delete out from under an
+        // in-flight inbox_enrich job. This narrows but doesn't eliminate the
+        // window (there's no page-level lock in this codebase) — the handler
+        // itself also re-checks existence right before its merge write.
+        if (page.frontmatter?.inbox_status === 'merging') {
+          failed.push({ slug, reason: 'enrichment_in_progress' });
+          continue;
+        }
+        try {
+          await ctx.engine.deletePage(slug, { sourceId: page.source_id });
+          discarded.push(slug);
+        } catch {
+          failed.push({ slug, reason: 'hard_delete_failed' });
+        }
+        continue;
+      }
+      const result = await ctx.engine.softDeletePage(slug, { sourceId: page.source_id });
+      if (result) discarded.push(slug);
+      else failed.push({ slug, reason: 'already_soft_deleted' });
+    }
+    return { mode, discarded, failed };
+  },
+};
+
 // --- Search ---
 
 const search: Operation = {
@@ -1573,6 +1832,11 @@ const query: Operation = {
       description:
         "v0.43 — relational recall arm. SMART DEFAULT (on in balanced/tokenmax). When the question is about a RELATIONSHIP ('who invested in widget-co', 'who introduced me to alice', 'what connects fund-a and fund-b'), the brain resolves the named entity and walks its typed-edge graph (invested_in, works_at, founded, …), surfacing the answer even when no passage mentions both sides. Pure no-op for non-relational questions. Pass FALSE to force lexical/vector-only retrieval (e.g. debugging why a graph answer appeared). You almost never set this.",
     },
+    trace: {
+      type: 'boolean',
+      description:
+        "v0.43.x fork addition — when true, return { results, trace } instead of the bare results array. `trace` surfaces real diagnostics already computed for this call (HybridSearchMeta: cache hit/miss, intent, vector_enabled, expansion_applied, autocut, adaptive_return, total_ms) that are otherwise discarded. Does NOT add per-step timing — the retrieval pipeline isn't instrumented at that granularity. Omit for unchanged behavior (bare SearchResult[]); every existing caller that doesn't pass this sees zero change.",
+    },
   },
   handler: async (ctx, p) => {
     const startedAt = Date.now();
@@ -1678,21 +1942,28 @@ const query: Operation = {
     // search handler — fire-and-forget, internal callers bypass this path.
     bumpLastRetrievedAt(ctx.engine, results.map((r) => r.page_id));
 
+    // Resolved meta with defaults — shared by eval capture (below) and the
+    // optional trace envelope (v0.43.x fork). Hoisted out of the
+    // eval-capture-only `if` so both consumers read a stable `const`
+    // (also sidesteps the closure-write narrowing quirk documented
+    // elsewhere in this codebase re: `capturedMeta` being reassigned only
+    // inside the `onMeta` callback).
+    const resolvedMeta: HybridSearchMeta = capturedMeta ?? {
+      vector_enabled: false, detail_resolved: detail ?? null, expansion_applied: false,
+    };
+
     // Op-layer capture (v0.25.0). Fire-and-forget. meta tells gbrain-evals
     // what hybridSearch *actually* did so replay can distinguish "with API
     // key" from "keyword-only fallback" and "expansion fired" from
     // "expansion requested + silently fell back."
     if (isEvalCaptureEnabled(ctx.config)) {
-      const meta: HybridSearchMeta = capturedMeta ?? {
-        vector_enabled: false, detail_resolved: detail ?? null, expansion_applied: false,
-      };
       void captureEvalCandidate(
         ctx.engine,
         {
           tool_name: 'query',
           query: queryText,
           results,
-          meta,
+          meta: resolvedMeta,
           latency_ms,
           remote: ctx.remote ?? false,
           expand_enabled: expand,
@@ -1704,6 +1975,26 @@ const query: Operation = {
       );
     }
 
+    // v0.43.x fork — opt-in trace envelope. Bare `results` (unchanged) unless
+    // the caller explicitly asks for `trace`; every field below is sourced
+    // from resolvedMeta/latency_ms already computed above, not new work.
+    if (p.trace === true) {
+      return {
+        results,
+        trace: {
+          total_ms: latency_ms,
+          cache_status: resolvedMeta.cache?.status ?? 'disabled',
+          cache_hit: resolvedMeta.cache?.status === 'hit',
+          vector_enabled: resolvedMeta.vector_enabled,
+          expansion_applied: resolvedMeta.expansion_applied,
+          intent: resolvedMeta.intent ?? null,
+          detail_resolved: resolvedMeta.detail_resolved,
+          autocut: resolvedMeta.autocut ?? null,
+          adaptive_return: resolvedMeta.adaptive_return ?? null,
+          token_budget: resolvedMeta.token_budget ?? null,
+        },
+      };
+    }
     return results;
   },
   scope: 'read',
@@ -3050,10 +3341,11 @@ const get_job: Operation = {
   scope: 'admin',
   handler: async (ctx, p) => {
     const { MinionQueue } = await import('./minions/queue.ts');
+    const { getExecutionLane } = await import('./minions/execution-lane.ts');
     const queue = new MinionQueue(ctx.engine);
     const job = await queue.getJob(p.id as number);
     if (!job) throw new OperationError('invalid_params', `Job not found: ${p.id}`);
-    return job;
+    return { ...job, execution_lane: getExecutionLane(job.name) };
   },
 };
 
@@ -3069,13 +3361,15 @@ const list_jobs: Operation = {
   scope: 'admin',
   handler: async (ctx, p) => {
     const { MinionQueue } = await import('./minions/queue.ts');
+    const { getExecutionLane } = await import('./minions/execution-lane.ts');
     const queue = new MinionQueue(ctx.engine);
-    return queue.getJobs({
+    const jobs = await queue.getJobs({
       status: p.status as string | undefined,
       queue: p.queue as string | undefined,
       name: p.name as string | undefined,
       limit: (p.limit as number) || 50,
     } as Parameters<typeof queue.getJobs>[0]);
+    return jobs.map((job) => ({ ...job, execution_lane: getExecutionLane(job.name) }));
   },
 };
 
@@ -3527,6 +3821,236 @@ const find_contradictions: Operation = {
     };
   },
   cliHints: { name: 'find-contradictions' },
+};
+
+// --- Compiled Truth workbench (真理编译工作台) ---
+//
+// Three ops power the admin `/compile` page: detect groups of conflicting/
+// overlapping pages on a topic (find_conflicts), LLM-merge a group into one
+// authoritative body + explainable diff (compile_truth), and persist the
+// adopted result back as a page body (adopt_compiled_truth). compile_truth is
+// read-only (produces a proposal); only adopt_compiled_truth writes.
+
+interface ConflictMemberOut {
+  slug: string;
+  title: string;
+  type: string;
+  updated_at: string;
+  excerpt: string;
+}
+
+interface ConflictGroupOut {
+  id: string;
+  topic: string;
+  source: 'probe' | 'cluster';
+  severity: 'low' | 'medium' | 'high' | null;
+  members: ConflictMemberOut[];
+}
+
+const find_conflicts: Operation = {
+  name: 'find_conflicts',
+  description:
+    'Detect groups of conflicting/overlapping markdown pages on a topic, for the Compiled Truth workbench. Hybrid source: prefers precomputed contradiction-probe pairs (eval_contradictions_runs), falls back to live hybridSearch clustering when a topic is supplied and no probe has run. Read-only.',
+  scope: 'read',
+  params: {
+    topic: {
+      type: 'string',
+      description: 'Optional topic filter (probe) / seed query (cluster fallback). Substring match on group topic or member slug.',
+    },
+    severity: {
+      type: 'string',
+      enum: ['low', 'medium', 'high'],
+      description: 'Optional severity filter (probe groups only).',
+    },
+    limit: { type: 'number', description: 'Max conflict groups to return. Default 5, max 50.' },
+  },
+  handler: async (ctx, p) => {
+    const limit = typeof p.limit === 'number' && p.limit > 0 ? Math.min(p.limit, 50) : 5;
+    const topic = typeof p.topic === 'string' ? p.topic.trim() : '';
+    const sevFilter =
+      p.severity === 'low' || p.severity === 'medium' || p.severity === 'high' ? p.severity : null;
+    const scope = sourceScopeOpts(ctx);
+
+    let groups: ConflictGroupCore[] = [];
+    let source: 'probe' | 'cluster' = 'probe';
+
+    // 1. Precomputed contradiction probe (same source as find_contradictions).
+    const rows = await ctx.engine.loadContradictionsTrend(30);
+    if (rows.length > 0) {
+      const report = rows[0].report_json as Record<string, unknown> | null;
+      const perQuery =
+        (report?.per_query as Array<{
+          contradictions: Array<{
+            axis: string;
+            severity: 'low' | 'medium' | 'high';
+            a: { slug: string };
+            b: { slug: string };
+          }>;
+        }> | undefined) ?? [];
+      const findings = perQuery.flatMap((q) => q.contradictions).map((f) => ({
+        a: { slug: f.a.slug },
+        b: { slug: f.b.slug },
+        axis: f.axis,
+        severity: f.severity,
+      }));
+      groups = groupConflicts(findings);
+      if (sevFilter) groups = groups.filter((g) => g.severity === sevFilter);
+      if (topic) {
+        const t = topic.toLowerCase();
+        groups = groups.filter(
+          (g) => g.topic.toLowerCase().includes(t) || g.slugs.some((s) => s.toLowerCase().includes(t)),
+        );
+      }
+    }
+
+    // 2. Cluster fallback: no probe groups but a topic → hybridSearch cluster.
+    if (groups.length === 0 && topic) {
+      source = 'cluster';
+      const results = await hybridSearch(ctx.engine, topic, { limit: 12, ...scope });
+      const seen = new Set<string>();
+      const slugs: string[] = [];
+      for (const r of results) {
+        if (!seen.has(r.slug)) {
+          seen.add(r.slug);
+          slugs.push(r.slug);
+        }
+      }
+      if (slugs.length >= 2) {
+        groups = [{ id: `cluster:${topic}`, topic, slugs, severity: null, source: 'cluster' }];
+      }
+    }
+
+    // 3. Enrich member slugs with page metadata (source-scoped). Flatten
+    // across all shown groups and fetch concurrently instead of one
+    // sequential getPage per member per group.
+    const shownGroups = groups.slice(0, limit);
+    const allMemberSlugs = shownGroups.flatMap(g => g.slugs);
+    const fetchedPages = await Promise.all(allMemberSlugs.map(slug => ctx.engine.getPage(slug, scope)));
+    const pageBySlug = new Map(allMemberSlugs.map((slug, i) => [slug, fetchedPages[i]]));
+
+    const out: ConflictGroupOut[] = [];
+    for (const g of shownGroups) {
+      const members: ConflictMemberOut[] = [];
+      for (const slug of g.slugs) {
+        const page = pageBySlug.get(slug);
+        if (!page) continue;
+        members.push({
+          slug: page.slug,
+          title: page.title,
+          type: String(page.type),
+          updated_at:
+            typeof page.updated_at === 'string'
+              ? page.updated_at
+              : page.updated_at.toISOString(),
+          excerpt: page.compiled_truth.replace(/\s+/g, ' ').trim().slice(0, 180),
+        });
+      }
+      if (members.length >= 2) {
+        out.push({ id: g.id, topic: g.topic, source: g.source, severity: g.severity, members });
+      }
+    }
+
+    return {
+      groups: out,
+      source,
+      ...(out.length === 0
+        ? {
+            note:
+              'No conflict groups. Run `gbrain eval suspected-contradictions` to populate the probe, or pass a `topic` to cluster live.',
+          }
+        : {}),
+    };
+  },
+  cliHints: { name: 'find-conflicts' },
+};
+
+const compile_truth: Operation = {
+  name: 'compile_truth',
+  description:
+    'LLM-merge a set of candidate pages into one authoritative markdown body plus a keep/merge/add/remove diff. Read-only proposal — does NOT persist. Adopt the result with `adopt_compiled_truth`.',
+  scope: 'read',
+  params: {
+    slugs: {
+      type: 'array',
+      required: true,
+      items: { type: 'string' },
+      description: 'Candidate page slugs to merge (from a find_conflicts group).',
+    },
+    topic: { type: 'string', description: 'Optional topic label to steer the merge.' },
+    model: { type: 'string', description: 'Model override (alias or full id). Falls through models.think → default → opus.' },
+  },
+  handler: async (ctx, p) => {
+    const slugs = Array.isArray(p.slugs) ? (p.slugs as unknown[]).filter((s): s is string => typeof s === 'string') : [];
+    if (slugs.length === 0) {
+      throw new OperationError('invalid_params', 'compile_truth requires a non-empty `slugs` array');
+    }
+    const scope = sourceScopeOpts(ctx);
+    return compileTruth(ctx.engine, {
+      slugs,
+      topic: typeof p.topic === 'string' ? p.topic : undefined,
+      model: typeof p.model === 'string' ? p.model : undefined,
+      ...(scope.sourceIds !== undefined ? { sourceIds: scope.sourceIds } : {}),
+      ...(scope.sourceId !== undefined ? { sourceId: scope.sourceId } : {}),
+    });
+  },
+  cliHints: { name: 'compile-truth', positional: ['slugs'] },
+};
+
+const adopt_compiled_truth: Operation = {
+  name: 'adopt_compiled_truth',
+  description:
+    'Persist a compiled-truth body into a page (chunks + re-embeds so the body earns the compiled_truth retrieval boost). Records `compiled_from` provenance in frontmatter. Write op.',
+  scope: 'write',
+  mutating: true,
+  params: {
+    slug: { type: 'string', required: true, description: 'Target page slug for the adopted compiled truth.' },
+    compiled_markdown: { type: 'string', required: true, description: 'The merged markdown body (no frontmatter).' },
+    type: { type: 'string', description: 'Page type for frontmatter (default: inferred from slug).' },
+    title: { type: 'string', description: 'Page title for frontmatter (default: derived from slug tail).' },
+    sources: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Candidate slugs this was compiled from (audit provenance → frontmatter.compiled_from).',
+    },
+  },
+  handler: async (ctx, p) => {
+    const slug = p.slug as string;
+    const body = p.compiled_markdown as string;
+    if (!slug || typeof body !== 'string' || !body.trim()) {
+      throw new OperationError('invalid_params', 'adopt_compiled_truth requires `slug` and non-empty `compiled_markdown`');
+    }
+    if (ctx.dryRun) return { dry_run: true, action: 'adopt_compiled_truth', slug };
+
+    const sources = Array.isArray(p.sources)
+      ? (p.sources as unknown[]).filter((s): s is string => typeof s === 'string')
+      : [];
+    const fm: Record<string, unknown> = {};
+    if (typeof p.type === 'string' && p.type) fm.type = p.type;
+    if (typeof p.title === 'string' && p.title) fm.title = p.title;
+    if (sources.length > 0) fm.compiled_from = sources;
+    // Build a markdown doc (frontmatter + body) and route through the same
+    // importFromContent path put_page uses — chunking + embedding included so
+    // the body earns the 2.0x compiled_truth boost.
+    const content = matter.stringify(body.trim() + '\n', fm);
+
+    const { isAvailable } = await import('./ai/gateway.ts');
+    const noEmbed = !isAvailable('embedding');
+    const result = await importFromContent(ctx.engine, slug, content, {
+      noEmbed,
+      remote: ctx.remote !== false,
+      ...(ctx.sourceId ? { sourceId: ctx.sourceId } : {}),
+      source_kind: ctx.remote === false ? 'compile-truth' : 'mcp:adopt_compiled_truth',
+      source_uri: null,
+      ingested_via: ctx.remote === false ? 'adopt_compiled_truth' : 'mcp:adopt_compiled_truth',
+    });
+
+    return {
+      slug: result.slug,
+      status: result.status,
+      compiled_from: sources,
+    };
+  },
+  cliHints: { name: 'adopt-compiled-truth', positional: ['slug'], stdin: 'compiled_markdown' },
 };
 
 const find_trajectory: Operation = {
@@ -5316,6 +5840,8 @@ const chronicle_backfill: Operation = {
 export const operations: Operation[] = [
   // Page CRUD
   get_page, put_page, delete_page, list_pages,
+  // Inbox workflow
+  list_inbox, get_inbox_item, trigger_inbox_enrichment, discard_inbox_items,
   // v0.26.5 destructive-guard ops (page-level soft-delete + recovery + admin purge)
   restore_page, purge_deleted_pages,
   // Search
@@ -5373,6 +5899,8 @@ export const operations: Operation[] = [
   extract_facts, recall, forget_fact,
   // v0.32.6: contradiction probe MCP surface (M3)
   find_contradictions,
+  // Compiled Truth workbench (真理编译工作台)
+  find_conflicts, compile_truth, adopt_compiled_truth,
   // v0.33: expertise + relationship-proximity routing
   find_experts,
   // v0.35.4: temporal trajectory (typed claims over time + regression detection)

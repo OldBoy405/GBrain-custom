@@ -915,7 +915,7 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
     adminSessions.set(sessionId, sessionExpiresAt);
 
     res.cookie('gbrain_admin', sessionId, adminCookie(req, 7 * 24 * 60 * 60 * 1000));
-    res.redirect('/admin/');
+    res.redirect('/admin/#/');
   });
 
   // Admin auth middleware
@@ -1369,6 +1369,150 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
     }
   });
 
+  // MCP 暴露的操作集：/mcp 与 /admin/api/op cookie 代理共用，排除 localOnly（仅本地 CLI）。
+  const mcpOperations = operations.filter(op => !op.localOnly);
+
+  // 审计日志 + 实时活动广播——/mcp 的 5 个分支（tools/list、unknown-op、
+  // insufficient-scope、dispatch 异常、isError、success）与 /admin/api/op
+  // 共用同一段 INSERT + broadcastEvent，避免每个分支各自手写一份。
+  const logMcpRequest = async (
+    entry: {
+      tokenName: string;
+      agentName: string;
+      operation: string;
+      latencyMs: number;
+      status: 'success' | 'error';
+      errorMessage?: string;
+      paramsJsonb?: unknown;
+    },
+    broadcast: { scopes: string; params?: unknown; error?: { code: string; message: string } },
+  ): Promise<void> => {
+    try {
+      if (entry.errorMessage !== undefined) {
+        await executeRawJsonb(
+          engine,
+          `INSERT INTO mcp_request_log (token_name, agent_name, operation, latency_ms, status, error_message, params)
+           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+          [entry.tokenName, entry.agentName, entry.operation, entry.latencyMs, entry.status, entry.errorMessage],
+          [entry.paramsJsonb ?? null],
+        );
+      } else {
+        await executeRawJsonb(
+          engine,
+          `INSERT INTO mcp_request_log (token_name, agent_name, operation, latency_ms, status, params)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+          [entry.tokenName, entry.agentName, entry.operation, entry.latencyMs, entry.status],
+          [entry.paramsJsonb ?? null],
+        );
+      }
+    } catch { /* best effort — never fail the op on a logging miss */ }
+    broadcastEvent({
+      agent: entry.agentName,
+      operation: entry.operation,
+      scopes: broadcast.scopes,
+      latency_ms: entry.latencyMs,
+      status: entry.status,
+      ...(broadcast.params !== undefined ? { params: broadcast.params } : {}),
+      ...(broadcast.error ? { error: broadcast.error } : {}),
+      timestamp: new Date().toISOString(),
+    });
+  };
+
+  // === CUSTOM ADMIN ROUTES (BEGIN) — see admin/docs/FRONTEND_PLAN.zh.md §4.3 ===
+  // 二开：cookie 鉴权的 MCP 操作代理。让已登录 admin 的工作台页面免 Bearer 令牌
+  // 直接调 operations —— 走 dispatchToolCall，与 /mcp 同一分发路径（param 校验、
+  // OperationContext 构建、错误信封统一、brain_hot_memory 注入）。已登录 admin
+  // 本就能铸造 gbrain_ 令牌（/admin/api/api-keys），故此端点不放大权限。
+  // 响应包成 { result: ToolResult }，与 /mcp 的 JSON-RPC 信封同形，前端 parseMcpPayload
+  // 复用同一段解析。前端 mcp-client.ts 在无内存令牌时自动走本端点；粘贴令牌后切回 /mcp。
+  app.post('/admin/api/op', requireAdmin, express.json(), async (req: Request, res: Response) => {
+    const { name, arguments: args } = (req.body ?? {}) as {
+      name?: string;
+      arguments?: Record<string, unknown>;
+    };
+    if (!name || typeof name !== 'string') {
+      res.status(400).json({ error: 'name required' });
+      return;
+    }
+    const op = mcpOperations.find(o => o.name === name);
+    if (!op) {
+      res.status(404).json({ error: `unknown_operation: ${name}` });
+      return;
+    }
+    // 目前 admin 前端没有 source 切换 UI（整套面板只对着一个 source 工作），
+    // 与既有 webhook 路径一致地允许 x-gbrain-source-id 请求头覆盖，而不是硬写
+    // 死 'default'；没有该请求头时行为与此前完全一致。
+    const sourceId = req.header('x-gbrain-source-id') || 'default';
+    const adminAuth: AuthInfo = {
+      token: '',
+      clientId: 'admin-ui',
+      clientName: 'admin-ui',
+      scopes: ['admin'],
+      sourceId,
+    };
+    const startTime = Date.now();
+    const agentName = 'admin-ui';
+    // Scope enforcement — mirrors the /mcp handler below. adminAuth.scopes is
+    // always ['admin'] today so this never actually rejects anything (a
+    // logged-in admin can already mint a gbrain_ token with any scope via the
+    // API Keys page — this endpoint doesn't amplify privileges either way),
+    // but it's the same defense-in-depth check both dispatch paths should
+    // carry rather than only /mcp having it.
+    const requiredScope = op.scope || 'read';
+    if (!hasScope(adminAuth.scopes, requiredScope)) {
+      const latency = Date.now() - startTime;
+      await logMcpRequest(
+        { tokenName: adminAuth.clientId, agentName, operation: name, latencyMs: latency, status: 'error', errorMessage: `insufficient_scope: requires '${requiredScope}'` },
+        { scopes: adminAuth.scopes.join(','), error: { code: 'insufficient_scope', message: `requires '${requiredScope}'` } },
+      );
+      res.status(403).json({ error: 'insufficient_scope', message: `Operation ${name} requires '${requiredScope}' scope` });
+      return;
+    }
+    // Record admin-UI-initiated ops in the SAME audit log + live feed as the
+    // /mcp path (via the shared logMcpRequest helper above). Without this,
+    // cookie-authed work from the console (Ask page, etc.) is invisible: 今日
+    // 请求 stays 0 and 实时活动 never shows a row, even though the op ran.
+    // token_name/agent_name = 'admin-ui' distinguishes console traffic from
+    // Bearer-token agent traffic. Params are intentionally NOT persisted (may
+    // contain query text) — mirror the default /mcp behavior of logging an
+    // empty JSONB object.
+    try {
+      const toolResult = await dispatchToolCall(engine, name, args, {
+        remote: true,
+        sourceId,
+        auth: adminAuth,
+        metaHook: getBrainHotMemoryMeta,
+      });
+      const latency = Date.now() - startTime;
+      if (toolResult.isError) {
+        let errMsg = 'unknown_error';
+        try {
+          const parsed = JSON.parse(toolResult.content[0]?.text ?? '{}');
+          errMsg = parsed.error?.message ?? parsed.message ?? errMsg;
+        } catch { /* ignore */ }
+        await logMcpRequest(
+          { tokenName: adminAuth.clientId, agentName, operation: name, latencyMs: latency, status: 'error', errorMessage: errMsg, paramsJsonb: {} },
+          { scopes: adminAuth.scopes.join(','), error: { code: 'op_error', message: errMsg } },
+        );
+      } else {
+        await logMcpRequest(
+          { tokenName: adminAuth.clientId, agentName, operation: name, latencyMs: latency, status: 'success', paramsJsonb: {} },
+          { scopes: adminAuth.scopes.join(',') },
+        );
+      }
+      res.json({ jsonrpc: '2.0', id: 0, result: toolResult });
+    } catch (e) {
+      const latency = Date.now() - startTime;
+      const errMsg = e instanceof Error ? e.message : 'op failed';
+      await logMcpRequest(
+        { tokenName: adminAuth.clientId, agentName, operation: name, latencyMs: latency, status: 'error', errorMessage: errMsg, paramsJsonb: {} },
+        { scopes: adminAuth.scopes.join(','), error: { code: 'op_error', message: errMsg } },
+      );
+      res.status(500).json({ error: errMsg });
+    }
+  });
+  // === CUSTOM ADMIN ROUTES (END) ===
+
   // ---------------------------------------------------------------------------
   // SSE live activity feed
   // ---------------------------------------------------------------------------
@@ -1378,8 +1522,27 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
 
+    // Any intermediary that forwards headers via writeHead() instead of
+    // flushHeaders() (Node's http-proxy — incl. the admin/vite.config.ts dev
+    // proxy — nginx, most corporate reverse proxies) batches the status line
+    // with the FIRST body byte instead of sending it immediately. Without an
+    // initial write, a quiet connection (no broadcastEvent yet) leaves the
+    // browser's EventSource stuck at readyState CONNECTING forever — no
+    // onopen, no onerror, nothing in the console. An immediate SSE comment
+    // line forces that flush; the repeating one keeps it alive across any
+    // idle-timeout on the same class of intermediary. Comment lines (`:` +
+    // text) are part of the SSE spec and are ignored by EventSource's message
+    // parsing, so they never surface as a `message` event.
+    res.write(': connected\n\n');
+    const heartbeat = setInterval(() => {
+      try { res.write(': ping\n\n'); } catch { clearInterval(heartbeat); }
+    }, 25_000);
+
     sseClients.add(res);
-    req.on('close', () => sseClients.delete(res));
+    req.on('close', () => {
+      clearInterval(heartbeat);
+      sseClients.delete(res);
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -1446,7 +1609,6 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
   // ---------------------------------------------------------------------------
   // MCP tool calls (bearer auth + scope enforcement)
   // ---------------------------------------------------------------------------
-  const mcpOperations = operations.filter(op => !op.localOnly);
 
   // v0.36.x #1076: MCP Streamable HTTP spec — GET /mcp opens an optional SSE
   // backchannel for server-initiated messages. gbrain's transport is stateless
@@ -1481,23 +1643,10 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
       // ever called tools/list, and the v0.26.3 persistence regression test
       // asserting >= 2 rows after tools/list + tools/call was unreachable.
       const latency = Date.now() - startTime;
-      try {
-        await executeRawJsonb(
-          engine,
-          `INSERT INTO mcp_request_log (token_name, agent_name, operation, latency_ms, status, params)
-           VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
-          [authInfo.clientId, agentName, 'tools/list', latency, 'success'],
-          [null],
-        );
-      } catch { /* best effort */ }
-      broadcastEvent({
-        agent: agentName,
-        operation: 'tools/list',
-        scopes: authInfo.scopes.join(','),
-        latency_ms: latency,
-        status: 'success',
-        timestamp: new Date().toISOString(),
-      });
+      await logMcpRequest(
+        { tokenName: authInfo.clientId, agentName, operation: 'tools/list', latencyMs: latency, status: 'success' },
+        { scopes: authInfo.scopes.join(',') },
+      );
       return {
         tools: mcpOperations.map(op => ({
           name: op.name,
@@ -1521,24 +1670,10 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
         // misbehaving agents need to see the full attempt log, not just
         // valid-op success/error.
         const latency = Date.now() - startTime;
-        try {
-          await executeRawJsonb(
-            engine,
-            `INSERT INTO mcp_request_log (token_name, agent_name, operation, latency_ms, status, error_message, params)
-             VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
-            [authInfo.clientId, agentName, name, latency, 'error', `unknown_operation: ${name}`],
-            [null],
-          );
-        } catch { /* best effort */ }
-        broadcastEvent({
-          agent: agentName,
-          operation: name,
-          scopes: authInfo.scopes.join(','),
-          latency_ms: latency,
-          status: 'error',
-          error: { code: 'unknown_operation', message: `Unknown: ${name}` },
-          timestamp: new Date().toISOString(),
-        });
+        await logMcpRequest(
+          { tokenName: authInfo.clientId, agentName, operation: name, latencyMs: latency, status: 'error', errorMessage: `unknown_operation: ${name}` },
+          { scopes: authInfo.scopes.join(','), error: { code: 'unknown_operation', message: `Unknown: ${name}` } },
+        );
         return { content: [{ type: 'text', text: JSON.stringify({ error: 'unknown_operation', message: `Unknown: ${name}` }) }], isError: true };
       }
 
@@ -1553,24 +1688,10 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
         // motivation as the unknown-op path — and it makes the v0.26.3
         // persistence regression test reliable across both rejection paths.
         const latency = Date.now() - startTime;
-        try {
-          await executeRawJsonb(
-            engine,
-            `INSERT INTO mcp_request_log (token_name, agent_name, operation, latency_ms, status, error_message, params)
-             VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
-            [authInfo.clientId, agentName, name, latency, 'error', `insufficient_scope: requires '${requiredScope}'`],
-            [null],
-          );
-        } catch { /* best effort */ }
-        broadcastEvent({
-          agent: agentName,
-          operation: name,
-          scopes: authInfo.scopes.join(','),
-          latency_ms: latency,
-          status: 'error',
-          error: { code: 'insufficient_scope', message: `requires '${requiredScope}'` },
-          timestamp: new Date().toISOString(),
-        });
+        await logMcpRequest(
+          { tokenName: authInfo.clientId, agentName, operation: name, latencyMs: latency, status: 'error', errorMessage: `insufficient_scope: requires '${requiredScope}'` },
+          { scopes: authInfo.scopes.join(','), error: { code: 'insufficient_scope', message: `requires '${requiredScope}'` } },
+        );
         return {
           content: [{
             type: 'text',
@@ -1649,25 +1770,10 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
         // real object, not a JSON-encoded string.
         const latency = Date.now() - startTime;
         const errorPayload = serializeError(e);
-        try {
-          await executeRawJsonb(
-            engine,
-            `INSERT INTO mcp_request_log (token_name, agent_name, operation, latency_ms, status, error_message, params)
-             VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
-            [authInfo.clientId, agentName, name, latency, 'error', errorPayload.message],
-            [logParamsObj],
-          );
-        } catch { /* best effort */ }
-        broadcastEvent({
-          agent: agentName,
-          operation: name,
-          params: broadcastParams,
-          scopes: authInfo.scopes.join(','),
-          latency_ms: latency,
-          status: 'error',
-          error: errorPayload,
-          timestamp: new Date().toISOString(),
-        });
+        await logMcpRequest(
+          { tokenName: authInfo.clientId, agentName, operation: name, latencyMs: latency, status: 'error', errorMessage: errorPayload.message, paramsJsonb: logParamsObj },
+          { scopes: authInfo.scopes.join(','), params: broadcastParams, error: errorPayload },
+        );
         return { content: [{ type: 'text', text: JSON.stringify({ error: errorPayload }) }], isError: true };
       }
 
@@ -1681,46 +1787,17 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
           const parsed = JSON.parse(toolResult.content[0]?.text ?? '{}');
           errMsg = parsed.error?.message ?? parsed.message ?? errMsg;
         } catch { /* ignore */ }
-        try {
-          await executeRawJsonb(
-            engine,
-            `INSERT INTO mcp_request_log (token_name, agent_name, operation, latency_ms, status, error_message, params)
-             VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
-            [authInfo.clientId, agentName, name, latency, 'error', errMsg],
-            [logParamsObj],
-          );
-        } catch { /* best effort */ }
-        broadcastEvent({
-          agent: agentName,
-          operation: name,
-          params: broadcastParams,
-          scopes: authInfo.scopes.join(','),
-          latency_ms: latency,
-          status: 'error',
-          error: { code: 'op_error', message: errMsg },
-          timestamp: new Date().toISOString(),
-        });
+        await logMcpRequest(
+          { tokenName: authInfo.clientId, agentName, operation: name, latencyMs: latency, status: 'error', errorMessage: errMsg, paramsJsonb: logParamsObj },
+          { scopes: authInfo.scopes.join(','), params: broadcastParams, error: { code: 'op_error', message: errMsg } },
+        );
         return toolResult;
       }
 
-      try {
-        await executeRawJsonb(
-          engine,
-          `INSERT INTO mcp_request_log (token_name, agent_name, operation, latency_ms, status, params)
-           VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
-          [authInfo.clientId, agentName, name, latency, 'success'],
-          [logParamsObj],
-        );
-      } catch { /* best effort */ }
-      broadcastEvent({
-        agent: agentName,
-        operation: name,
-        params: broadcastParams,
-        scopes: authInfo.scopes.join(','),
-        latency_ms: latency,
-        status: 'success',
-        timestamp: new Date().toISOString(),
-      });
+      await logMcpRequest(
+        { tokenName: authInfo.clientId, agentName, operation: name, latencyMs: latency, status: 'success', paramsJsonb: logParamsObj },
+        { scopes: authInfo.scopes.join(','), params: broadcastParams },
+      );
       return toolResult;
     });
 

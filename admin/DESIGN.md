@@ -156,3 +156,47 @@
 | 2026-05-03 | Incorporate GStack design DNA | Same family: Inter + JetBrains Mono, dark base, semantic-only color. Diverges on accent (GStack: amber; GBrain: none — data is the color). |
 | 2026-05-03 | Per-client config export tabs | Claude Code, ChatGPT, Claude.ai, Cursor, Perplexity, JSON. Every agent has a copy-paste setup path. |
 | 2026-05-03 | Magic link auth | Login page tells you to ask your agent. No pasting hex strings into forms. |
+
+---
+
+# Brain 表层设计规范（v2 · 2026-07-07）
+
+> 双表层共存决策（见 `admin/docs/FRONTEND_PLAN.zh.md` §0 路线 A）。上面整份规范描述
+> **Ops 表层**（暗色 cockpit，现有 6 个运维页 Dashboard/Agents/RequestLog/Calibration/JobsWatch/Login）。
+> 本节描述**新增的 Brain 表层**（浅色暖纸编辑风，承载 8 个知识页）。两套表层共享字体族与
+> 4px 间距基准，仅在主题色/背景/衬线体上分叉；通过 `[data-surface='brain']` 作用域隔离，
+> 互不影响。token 落在 `admin/src/tailwind.css` 的 `@theme`（Tailwind v4）。
+
+## 产品定位
+- **是什么**：面向知识消费者的"知识大脑"界面 —— 时间线、检索、图谱、综合沉淀。
+- **气质**：编辑型、可阅读、暖纸感。与 Ops 的 cockpit 气质刻意区分。
+- **参照**：Readwise / Reader、Obsidian Publish、编辑型内容产品。
+
+## 色彩（实测搬自 docs/前端案例 MHTML :root）
+- 背景：`--color-canvas #f5f1e8`（暖纸）、卡片 `--color-surface #fffdf7`
+- 分隔：`--color-hairline #ddd7c7`、`--color-emphasis #b8b29f`
+- 文字：`--color-ink #1a1a17` / `--color-ink-soft #4d4d47` / `--color-muted #8b8a80` / 反白 `--color-inverse #fafaf6`
+- 主色：`--color-accent #0f766e`（青绿）+ `--color-accent-soft #e8f2f1`
+- 语义（有意义、非装饰，与 Ops 哲学一致）：入库 `--color-amber #b45309`、检索/联系 `--color-coral #d4613a`、矛盾 `--color-contra #b91c1c`、通过 `--color-ok #166534`
+- 图谱节点分类色：entity `#6b5b3a` / source `#8c8b63` / synthesis `#7b3f9e` / recent `#d97706`
+
+## 字体
+- 界面/正文：Inter + **Noto Sans SC**（`--font-sans-sc`，中文正文默认）
+- 标题/引文：**Noto Serif SC**（`--font-serif-sc`）—— Brain 表层编辑气质的来源，用于页面大标题、卡片标题
+- 数据/代码/ID/slug：JetBrains Mono（`--font-mono`）
+
+## 圆角与间距
+- 卡片/面板：`rounded-xl`(12)/`rounded-2xl`(16)；按钮/输入：`rounded-lg`(8)；徽章：pill
+- 沿用 4px 间距基准；页面主容器居中，`max-w` 视页面 860–1000px
+
+## 组件（`admin/src/components/brain/`）
+- `PageHeader`（kicker + 衬线标题 + 副标题 + 右侧槽）、`StatCard`、`Badge`（语义色调）、
+  `StatusPill`（SSE 状态）、`Drawer`（右侧滑出）、`WhyButton` + `WhyProvider`（教育原理面板）、
+  `AsyncState`（加载/错误/空态）、
+  `McpConnect`（Tier3 令牌连接）、`PipelineSteps`（检索 12 步示意）、`GraphCanvas`（d3-force 图谱）
+
+## 与 Ops 表层的差异（刻意）
+- Ops 禁用"图标做导航"；**Brain 使用 Lucide 图标导航**（示例原生语言）。
+- Ops 纯暗、无主色；**Brain 浅色 + 青绿主色 + 语义多色**。
+- Ops 侧栏 200px 扁平；**Brain 侧栏 240px + 分组（工作台/后台调度/技能进化/关于）**。
+- 相同点：语义色而非装饰色、无 spinner（展示陈旧数据直到刷新）、左对齐为主。
