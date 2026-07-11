@@ -34,7 +34,7 @@ The resolved provider + dimensions get persisted to `~/.gbrain/config.json` atom
 | `zhipu` | `ZHIPUAI_API_KEY` | 1024 | varies | no | no |
 | `ollama` | (none — runs locally) | 768 | 0 | yes | no |
 | `llama-server` | (none — runs locally) | user-set | 0 | yes | no |
-| `litellm` | `LITELLM_API_KEY` (optional) | user-set | varies | yes (proxy) | no |
+| `litellm` | `LITELLM_API_KEY` (optional) | user-set | varies | yes (proxy) | yes (backend permitting) |
 | `together` | `TOGETHER_API_KEY` | 768 | varies | no | no |
 | `anthropic` | (no embedding model — chat only) | — | — | — | — |
 | `deepseek` | (no embedding model — chat only) | — | — | — | — |
@@ -76,6 +76,8 @@ The doctor distinguishes two repair paths:
 ### OpenAI
 
 Default. Set `OPENAI_API_KEY`. Models: `text-embedding-3-large` (3072 max, 1536 default), `text-embedding-3-small` (1536). Matryoshka via the `dimensions` field — gbrain pins it from `embedding_dimensions` config so existing 1536-dim brains stay aligned across SDK upgrades.
+
+Optional `OPENAI_BASE_URL` — point the native OpenAI provider at an OpenAI-compatible gateway. A bare host is normalized to carry the `/v1` suffix automatically (so `https://gw.example.com` and `https://gw.example.com/v1` both work); when unset, the SDK's default endpoint is untouched. `ANTHROPIC_BASE_URL` gets the same normalization for Anthropic chat/expansion calls.
 
 ### Voyage AI
 
@@ -141,7 +143,9 @@ Set `ZHIPUAI_API_KEY`. Models: `embedding-3` (current; Matryoshka 256-2048 dims)
 
 No env required — Ollama runs unauthenticated locally. Optional `OLLAMA_BASE_URL` (default `http://localhost:11434/v1`) and `OLLAMA_API_KEY` (for auth-enabled deployments).
 
-Recipe ships with `nomic-embed-text` (768d, recommended), `mxbai-embed-large` (1024d), `all-minilm` (384d). `gbrain providers test --model ollama:nomic-embed-text` smoke-tests the local install.
+Recipe ships with `nomic-embed-text` (768d, recommended), `mxbai-embed-large` (1024d), `all-minilm` (384d), plus the larger modern embedders `qwen3-embed-8b` (4096d) and `snowflake-arctic-embed-l-v2` (1024d). `gbrain providers test --model ollama:nomic-embed-text` smoke-tests the local install.
+
+The recipe default is `nomic-embed-text`'s 768 dims. If you run one of the larger models, declare its native dimension with `--embedding-dimensions <N>` at init — gbrain trusts the value you declare for local recipes instead of rejecting a non-768 width.
 
 **Any pulled model + custom dimensions.** The `models` list above is advisory — Ollama serves whatever you `ollama pull`, so `--embedding-model ollama:<any-model>` is accepted. Because Ollama's OpenAI-compatible `/v1/embeddings` endpoint honors the `dimensions` field, you can also pin a custom width via `--embedding-dimensions <N>` (any integer up to the pgvector column cap). gbrain sends that same `dimensions` value on every embed request, so Matryoshka models (e.g. `qwen3-embedding:4b`, native 2560, truncatable 32–2560) land at exactly the width baked into the schema:
 
@@ -157,7 +161,7 @@ Pick ≤2000 dims (e.g. 768 / 1024) to keep the HNSW index; higher widths (e.g. 
 
 `llama.cpp`'s `llama-server --embeddings` endpoint. No env required. Optional `LLAMA_SERVER_BASE_URL` (default `http://localhost:8080/v1`) and `LLAMA_SERVER_API_KEY`.
 
-User-driven models: launch llama-server with `--model <gguf-path> --embeddings`, then run `gbrain init --embedding-model llama-server:<your-id> --embedding-dimensions <N>`. The recipe refuses the implicit shorthand `--model llama-server` because there's no canonical first model.
+User-driven models: launch llama-server with `--model <gguf-path> --embeddings`, then run `gbrain init --embedding-model llama-server:<your-id> --embedding-dimensions <N>`. gbrain trusts the dimension you declare (you know the GGUF you launched); the recipe refuses the implicit shorthand `--model llama-server` because there's no canonical first model.
 
 `--embedding-dimensions <N>` accepts any width up to the pgvector column cap — set it to the width the launched model actually emits. Unlike Ollama, gbrain does **not** send a `dimensions` field on the embed request (llama.cpp serves a fixed width from its launch config and doesn't Matryoshka-truncate), so a declared width that disagrees with the model's real output surfaces fail-loud at first embed.
 
@@ -167,7 +171,7 @@ Run [LiteLLM](https://docs.litellm.ai/docs/proxy/quick_start) in front of any pr
 
 This is the catch-all for "my provider isn't in the list above." Set up LiteLLM, then `gbrain init --embedding-model litellm:<your-model-id> --embedding-dimensions <N>`.
 
-`--embedding-dimensions <N>` accepts any width up to the pgvector column cap — set it to the width your proxied backend emits. gbrain does **not** force a `dimensions` field on the embed request (the proxied backend decides its own width, and some fixed-dim backends reject the param), so a declared width that disagrees with the backend's real output surfaces fail-loud at first embed. If your backend is a Matryoshka model you want truncated, configure the reduction on the LiteLLM side and declare the reduced width here.
+**Include the `/v1` suffix in `LITELLM_BASE_URL` if your proxy serves the OpenAI route there** (e.g. `http://localhost:4000/v1`). Many LiteLLM deployments expose the OpenAI-compatible API only under `/v1`; pointing gbrain at the bare host 404s or fails authentication with no hint. `--embedding-dimensions <N>` accepts any width up to the pgvector column cap — set it to the width your proxied backend emits. gbrain does **not** force a `dimensions` field on the embed request (the proxied backend decides its own width, and some fixed-dim backends reject the param), so a declared width that disagrees with the backend's real output surfaces fail-loud at first embed. If your backend is a Matryoshka model you want truncated, configure the reduction on the LiteLLM side and declare the reduced width here.
 
 ## Choosing dimensions
 
@@ -195,7 +199,5 @@ The supported paths:
 
 - **PGLite (default install):** `gbrain reinit-pglite --embedding-model <provider>:<model> --embedding-dimensions <N>` — one-command wipe-and-reinit that preserves every other config field (chat model, expansion model, API keys), backs up the prior brain to `<path>.bak`, runs `gbrain init` with the new flags, and re-syncs your brain repo. Add `--no-sync` to skip the resync, `--yes` to skip the TTY confirmation, `--json` for scripts.
 - **Postgres (Supabase / self-hosted):** follow the SQL recipe in `docs/embedding-migrations.md` (drop the HNSW index, ALTER COLUMN TYPE, clear stale embeddings, recreate the index conditionally, then `gbrain init --supabase --embedding-model X --embedding-dimensions N` to update the file plane and re-embed).
-
-`gbrain doctor` 8c "alternative_providers" surfaces unconfigured providers whose env is already set — useful when you've configured OpenAI but also have e.g. `VOYAGE_API_KEY` exported and want to know you can switch without extra setup.
 
 `gbrain doctor` 8c "alternative_providers" surfaces unconfigured providers whose env is already set — useful when you've configured OpenAI but also have e.g. `VOYAGE_API_KEY` exported and want to know you can switch without extra setup.
