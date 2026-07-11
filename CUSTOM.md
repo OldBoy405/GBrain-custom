@@ -212,4 +212,4 @@
 | 日期 | 官方版本/commit | 冲突 | 备注 |
 |------|----------------|------|------|
 | 2026-07-04 | v0.42.56.0（`3ba1351f`） | 无 | Ollama 维度等二开保留；`typecheck` 通过 |
-| （待填） | 下次 merge 后补充 | — | 按「上游代码改动」节总则整合后记录 |
+| 2026-07-11 | v0.42.58.0（`a25209bb`，#2627） | **5 文件** | embedding 维度区域：`embedding-dim-check.ts`、2 测试、2 文档；采用上游 `trust_custom_dims` + 保留二开 Ollama 5 参 `dimsProviderOptions`、DeepSeek 测试、LiteLLM 文档合并；Inbox/真理沉淀/serve-http 等**无冲突**自动合并 |
