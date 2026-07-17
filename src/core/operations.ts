@@ -1649,14 +1649,15 @@ const discard_inbox_items: Operation = {
         continue;
       }
       if (mode === 'hard') {
-        // Best-effort race mitigation: don't hard-delete out from under an
-        // in-flight inbox_enrich job. This narrows but doesn't eliminate the
-        // window (there's no page-level lock in this codebase) — the handler
-        // itself also re-checks existence right before its merge write.
-        if (page.frontmatter?.inbox_status === 'merging') {
-          failed.push({ slug, reason: 'enrichment_in_progress' });
-          continue;
-        }
+        // NB: we deliberately do NOT block hard-delete on inbox_status === 'merging'.
+        // A dead/never-run inbox_enrich job leaves a page stuck in 'merging' forever;
+        // an absolute guard here turned those into permanently un-deletable zombies
+        // (the exact bug users hit when enrichment was queued but no worker drained it).
+        // Hard mode already requires an explicit confirm_destructive (checked above),
+        // and the inbox_enrich handler re-checks page existence right before its merge
+        // write — a delete that lands mid-job just fails that job cleanly instead of
+        // resurrecting the page. That downstream re-check, not a status gate here, is
+        // the real race protection.
         try {
           await ctx.engine.deletePage(slug, { sourceId: page.source_id });
           discarded.push(slug);
@@ -2374,6 +2375,23 @@ const list_link_sources: Operation = {
  */
 const TRAVERSE_DEPTH_CAP = 10;
 
+/**
+ * Result-size + per-iteration frontier guards for traverse_graph.
+ *
+ * Pre-guard, the op had a `depth` cap but no bound on how many nodes/edges a
+ * single call could return. A hub node at depth>=3 could pull thousands of
+ * rows — blowing up the JSON payload, the admin canvas, and DB CPU. Two knobs:
+ *   - node_limit: post-query slice on the returned array (final payload cap).
+ *   - frontier_cap: engine-level per-recursive-iteration LIMIT (bounds DB work
+ *     on hub-fanout; already implemented in both engines, now wired through).
+ * Both are clamped to hard ceilings so a remote MCP caller can't raise them
+ * back to unbounded.
+ */
+const TRAVERSE_NODE_LIMIT_DEFAULT = 300;
+const TRAVERSE_NODE_LIMIT_CAP = 2000;
+const TRAVERSE_FRONTIER_CAP_DEFAULT = 200;
+const TRAVERSE_FRONTIER_CAP_MAX = 1000;
+
 const traverse_graph: Operation = {
   name: 'traverse_graph',
   description: 'Traverse link graph from a page. With link_type/direction, returns edges (GraphPath[]) instead of nodes.',
@@ -2382,6 +2400,8 @@ const traverse_graph: Operation = {
     depth: { type: 'number', description: `Max traversal depth (default 5, capped at ${TRAVERSE_DEPTH_CAP})` },
     link_type: { type: 'string', description: 'Filter to one link type (per-edge filter, traversal only follows matching edges)' },
     direction: { type: 'string', enum: ['in', 'out', 'both'], description: 'Traversal direction (default out)' },
+    node_limit: { type: 'number', description: `Max rows returned (default ${TRAVERSE_NODE_LIMIT_DEFAULT}, capped at ${TRAVERSE_NODE_LIMIT_CAP}). Result is ordered by (depth, slug) so the slice is stable.` },
+    frontier_cap: { type: 'number', description: `Per-iteration recursive LIMIT bounding hub-fanout DB work (default ${TRAVERSE_FRONTIER_CAP_DEFAULT}, capped at ${TRAVERSE_FRONTIER_CAP_MAX}). Pass 0 to disable.` },
   },
   handler: async (ctx, p) => {
     const slug = p.slug as string;
@@ -2392,6 +2412,19 @@ const traverse_graph: Operation = {
     const depth = Math.max(1, Math.min(requestedDepth, TRAVERSE_DEPTH_CAP));
     const linkType = p.link_type as string | undefined;
     const direction = p.direction as 'in' | 'out' | 'both' | undefined;
+
+    // node_limit: post-query slice (final payload cap). Clamp to [1, CAP].
+    const nodeLimit = Math.max(
+      1,
+      Math.min((p.node_limit as number) || TRAVERSE_NODE_LIMIT_DEFAULT, TRAVERSE_NODE_LIMIT_CAP),
+    );
+    // frontier_cap: 0 explicitly disables; otherwise clamp to [1, MAX].
+    const rawFrontier = p.frontier_cap as number | undefined;
+    const frontierCap =
+      rawFrontier === 0
+        ? undefined
+        : Math.max(1, Math.min(rawFrontier ?? TRAVERSE_FRONTIER_CAP_DEFAULT, TRAVERSE_FRONTIER_CAP_MAX));
+
     // v0.34.1 (#861 — P0 leak seal): thread caller's source scope so graph
     // walks stay within the auth'd client's accessible sources. Pre-fix,
     // traverseGraph / traversePaths happily followed edges into pages from
@@ -2400,12 +2433,77 @@ const traverse_graph: Operation = {
     // Backward compat: when neither link_type nor direction is provided, return
     // the legacy GraphNode[] shape. Once either is set, switch to GraphPath[].
     if (linkType === undefined && direction === undefined) {
-      return ctx.engine.traverseGraph(slug, depth, scope);
+      const nodes = await ctx.engine.traverseGraph(slug, depth, { ...scope, frontierCap });
+      if (nodes.length > nodeLimit) {
+        ctx.logger.warn(`[gbrain] traverse_graph returned ${nodes.length} nodes; truncated to node_limit=${nodeLimit}`);
+        return nodes.slice(0, nodeLimit);
+      }
+      return nodes;
     }
-    return ctx.engine.traversePaths(slug, { depth, linkType, direction, ...scope });
+    const paths = await ctx.engine.traversePaths(slug, { depth, linkType, direction, frontierCap, ...scope });
+    if (paths.length > nodeLimit) {
+      ctx.logger.warn(`[gbrain] traverse_graph returned ${paths.length} edges; truncated to node_limit=${nodeLimit}`);
+      return paths.slice(0, nodeLimit);
+    }
+    return paths;
   },
   scope: 'read',
   cliHints: { name: 'graph', positional: ['slug'] },
+};
+
+/**
+ * Whole-graph overview caps. Root-less view for the admin Graph page's
+ * "no root selected" default. Node selection is degree-ranked so a mid-size
+ * brain still shows its backbone; both caps are hard ceilings so a remote
+ * caller can't request an unbounded dump.
+ */
+const GRAPH_OVERVIEW_NODE_LIMIT_DEFAULT = 500;
+const GRAPH_OVERVIEW_NODE_LIMIT_CAP = 2000;
+const GRAPH_OVERVIEW_EDGE_LIMIT_DEFAULT = 1500;
+const GRAPH_OVERVIEW_EDGE_LIMIT_CAP = 5000;
+
+const graph_overview: Operation = {
+  name: 'graph_overview',
+  description:
+    'Root-less whole-graph overview: the most-connected pages (by degree) plus every edge among them, as GraphNode[]. Powers the "no root selected" default view. Node/edge counts are hard-capped; use traverse_graph for a specific page neighborhood.',
+  params: {
+    node_limit: { type: 'number', description: `Max nodes — the highest-degree pages (default ${GRAPH_OVERVIEW_NODE_LIMIT_DEFAULT}, capped at ${GRAPH_OVERVIEW_NODE_LIMIT_CAP}).` },
+    edge_limit: { type: 'number', description: `Max edges across all nodes (default ${GRAPH_OVERVIEW_EDGE_LIMIT_DEFAULT}, capped at ${GRAPH_OVERVIEW_EDGE_LIMIT_CAP}).` },
+  },
+  handler: async (ctx, p) => {
+    const nodeLimit = Math.max(
+      1,
+      Math.min((p.node_limit as number) || GRAPH_OVERVIEW_NODE_LIMIT_DEFAULT, GRAPH_OVERVIEW_NODE_LIMIT_CAP),
+    );
+    const edgeLimit = Math.max(
+      1,
+      Math.min((p.edge_limit as number) || GRAPH_OVERVIEW_EDGE_LIMIT_DEFAULT, GRAPH_OVERVIEW_EDGE_LIMIT_CAP),
+    );
+    // Source scope threaded like every other read-side graph op (#861).
+    const scope = sourceScopeOpts(ctx);
+    const nodes = await ctx.engine.graphOverview({ nodeLimit, ...scope });
+    // Op-level edge cap: keep all nodes, drop links once the budget is spent.
+    let budget = edgeLimit;
+    let dropped = 0;
+    for (const n of nodes) {
+      if (budget <= 0) {
+        dropped += n.links.length;
+        n.links = [];
+        continue;
+      }
+      if (n.links.length > budget) {
+        dropped += n.links.length - budget;
+        n.links = n.links.slice(0, budget);
+      }
+      budget -= n.links.length;
+    }
+    if (dropped > 0) {
+      ctx.logger.warn(`[gbrain] graph_overview trimmed ${dropped} edges to edge_limit=${edgeLimit}`);
+    }
+    return nodes;
+  },
+  scope: 'read',
+  cliHints: { name: 'graph-overview' },
 };
 
 // --- Timeline ---
@@ -5851,7 +5949,7 @@ export const operations: Operation[] = [
   // Tags
   add_tag, remove_tag, get_tags,
   // Links
-  add_link, remove_link, get_links, get_backlinks, list_link_sources, traverse_graph,
+  add_link, remove_link, get_links, get_backlinks, list_link_sources, traverse_graph, graph_overview,
   // Timeline
   add_timeline_entry, get_timeline,
   // Admin

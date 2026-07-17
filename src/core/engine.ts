@@ -1213,12 +1213,27 @@ export interface BrainEngine {
    * - direction: 'in' (follow to->from), 'out' (follow from->to), 'both'
    * - depth: max depth from root (default 5)
    * - sourceId/sourceIds: v0.34.1 source-isolation filter, see traverseGraph
+   * - frontierCap: per-iteration recursive LIMIT (bounds hub-fanout DB work),
+   *   same "approximately per-BFS-layer" semantics as traverseGraph's cap.
    * Uses cycle prevention (visited array in recursive CTE).
    */
   traversePaths(
     slug: string,
-    opts?: { depth?: number; linkType?: string; direction?: 'in' | 'out' | 'both'; sourceId?: string; sourceIds?: string[] },
+    opts?: { depth?: number; linkType?: string; direction?: 'in' | 'out' | 'both'; sourceId?: string; sourceIds?: string[]; frontierCap?: number },
   ): Promise<GraphPath[]>;
+  /**
+   * Root-less whole-graph overview: the `nodeLimit` most-connected pages (by
+   * total degree) plus every edge among them, as GraphNode[] (same shape as
+   * traverseGraph so the admin Graph page reuses one renderer). `depth` is 0
+   * for every node (no root). Powers the "no root selected → show the graph
+   * backbone" default; the caller (op handler) gates by brain size and trims
+   * edges to edge_limit. Source-scoped: node selection + edge aggregation both
+   * honor sourceId/sourceIds (degree ranking is a within-scope-approximate
+   * heuristic; output edges never cross scope).
+   */
+  graphOverview(
+    opts?: { nodeLimit?: number; sourceId?: string; sourceIds?: string[] },
+  ): Promise<GraphNode[]>;
   /**
    * Typed-edge relational fan-out for the relational recall arm (v0.43).
    *

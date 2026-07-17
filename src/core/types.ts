@@ -1270,6 +1270,16 @@ export interface GraphPath {
   context: string;
   /** Depth of `to_slug` from the root (1 for direct neighbors). */
   depth: number;
+  /**
+   * Title/type of `to_slug`. Optional so pre-existing callers/tests still
+   * typecheck. Populated by traversePaths so the admin Graph page can color
+   * path-mode nodes by type instead of falling back to the `unknown` bucket.
+   * `from_slug`'s metadata is not carried here — it surfaces as some other
+   * edge's `to_slug` at a shallower depth (root excepted; the root renders as
+   * accent regardless).
+   */
+  to_title?: string;
+  to_type?: string;
 }
 
 /**

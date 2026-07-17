@@ -4,13 +4,31 @@
 > 实现代码：`admin/src/pages/brain/Skills.tsx`  
 > 后端契约：`src/core/skill-catalog.ts`（`list_skills` / `get_skill`）、`src/core/skill-trigger-index.ts`  
 > Skillify 源文：`skills/skillify/SKILL.md`、`src/commands/skillify.ts`  
-> 生成日期：2026-07-11
+> 生成日期：2026-07-11 · **最近校正：2026-07-14**
+
+---
+
+## ⚠️ 2026-07-14 校正说明（本文档曾滞后于代码）
+
+2026-07-11 首版把一批已落地能力标成 ❌，实为文档漂移。截至本次校正，`Skills.tsx`
+已落地下列项，正文对照表已把相应 ❌→✅（历史叙述保留，仅结论更新）：
+
+- ✅ **`get_skill` 详情抽屉**（`SkillDetailDrawer.tsx`）：点卡片 → Drawer 渲染 SKILL.md 正文 + frontmatter + 工具可用性。
+- ✅ **Skillpack skill 可点击**：`list_brain_skillpack` 卡片里的 skill slug 可点 → `get_skill({ name, source_id })` 走 brain-resident 分支（返回 `ResidentSkillDetail`，抽屉双形态渲染）。
+- ✅ **`list_brain_skillpack` 区块**（schema_pack 匹配态 / 安装态 / scaffold 命令）。
+- ✅ **3 列网格**（`lg:grid-cols-3`）、**分类色点** + 卡片 **section 彩色 badge**、**卡片 hover**。
+- ✅ **`data-testid`**：`skills-search` / `skills-grid` / `skillify-button`（新增 `skills-load-more`）。
+- ✅ **工具栏 Skillify 实心 accent 按钮**（Sparkles）。
+- ✅ **filter URL hash 持久化**：`#/skills?section=meta&q=x`（`replaceState` 写回 + `hashchange` 同步）。
+- ✅ **渐进渲染护栏**：渲染上限 60 + 「显示更多」分批，兜住大目录 DOM 成本。
+
+仍未做（原因见文末）：`last_run` / `checklist N/11`（后端无字段，案例为 mock）、版本时间线 + diff、advisor（语义非 skill 专属，已正确落到「今日动态」页）、**服务端 section 过滤下推**（后端 `list_skills` 无分页，二次取回为内存已有数据的子集，净收益为零，需 upstream 后端分页方有意义）。
 
 ---
 
 ## 总览结论
 
-**骨架已对齐案例目标态约 65–70%**：Brain 壳层、`#/skills` 路由、搜索 + 分类 pill + 卡片网格、Skillify/Why 教育链路、live MCP `list_skills`、Vitest 覆盖均已落地。
+**骨架 + 详情层 + 视觉对齐 + 规模化护栏均已落地（约 90%）**：Brain 壳层、`#/skills` 路由、搜索 + 分类 pill（带色点）+ 3 列卡片网格、`get_skill` 详情抽屉、`list_brain_skillpack`、Skillify/Why 教育链路、live MCP `list_skills`、URL 持久化、渐进渲染、Vitest 覆盖均已落地。
 
 与案例的差异主要在两类：
 
@@ -21,13 +39,13 @@
 
 | 维度 | 对齐度 | 一句话 |
 |------|--------|--------|
-| 整体布局与导航 | ~85% | 同一 Brain 壳 + 搜索/过滤/网格 |
-| 分类与展示 | ~75% | 7 类顺序一致；缺色点、3 列、section badge |
-| 技能详情 | ~40% | 案例卡片内嵌 last run + checklist；实现偏 triggers/tools |
-| 搜索过滤 | ~90% | 逻辑等价，UI 细节不同 |
-| Skillify | ~80% | 均打开 Why 面板；按钮位置/样式不同 |
-| 真实 MCP | 实现更强 | live `list_skills`；案例 42 条静态 |
-| 测试 | 实现更强 | Vitest 8 条；案例仅 data-testid 钩子 |
+| 整体布局与导航 | ~95% | 同一 Brain 壳 + 搜索/过滤 + 3 列网格 |
+| 分类与展示 | ~95% | 7 类顺序一致；已补色点 + section 彩色 badge |
+| 技能详情 | ~75% | `get_skill` 详情抽屉已接（host + brain-resident 双形态）；仍无 last run/checklist |
+| 搜索过滤 | ~95% | 逻辑等价 + URL hash 持久化 |
+| Skillify | ~90% | 工具栏实心 accent 按钮；均打开 Why 面板 |
+| 真实 MCP | 实现更强 | live `list_skills` / `get_skill` / `list_brain_skillpack`；案例 42 条静态 |
+| 测试 | 实现更强 | Vitest 21 条；案例仅 data-testid 钩子 |
 
 **图例**：✅ 已对齐 / 实现更好 · ⚠️ 部分对齐 · ❌ 未实现 / 不适用
 
@@ -49,24 +67,26 @@
 
 | 维度 | 案例 MHTML 目标 | 当前实现 | 状态 |
 |------|----------------|----------|------|
-| **1. 整体布局** | `max-w-[1400px]` + 页头 + 工具栏 + 3 列网格 | `brain-page-wide` + `PageHeader` + 2 列网格 | ⚠️ 部分 |
+| **1. 整体布局** | `max-w-[1400px]` + 页头 + 工具栏 + 3 列网格 | `brain-page-wide` + `PageHeader` + 3 列网格（`lg:grid-cols-3`）| ✅ 已对齐 |
 | **页头** | `// 技能库 · SKILLS` + `42 个 skill · 11 项 checklist 全绿` + Wrench 26px | `PageHeader`「技能进化」+「技能」+ 副标题 | ⚠️ 部分 |
 | **页头沙箱 Badge** | 脉冲「沙箱」标识 | 无（侧栏/顶栏全局可能有） | ⚠️ 部分 |
-| **2. 七类分类** | ingest/enrich/brain-ops/research/publish/ops/meta + 色点 | 同序 `PREFERRED_SECTION_ORDER`；pill 无色点 | ⚠️ 部分 |
+| **2. 七类分类** | ingest/enrich/brain-ops/research/publish/ops/meta + 色点 | 同序 `PREFERRED_SECTION_ORDER`；pill 带色点 | ✅ 已对齐 |
 | **分类计数** | pill 内 `(7)` 等 | pill + 汇总行 `N 个 skill · M 个分类` | ✅ 已对齐 |
-| **3. 卡片字段** | name / section badge / desc / last run / checklist / trigger 行 | name / section 文本 / desc / trigger pills / 工具可用性 | ⚠️ 部分 |
-| **last run** | 13:42、持续在线、12:00 CI 等 mock | 无 | ❌ |
-| **checklist N/11** | 11/11 或 10/11 mock | 无 | ❌ |
+| **3. 卡片字段** | name / section badge / desc / last run / checklist / trigger 行 | name / section 彩色 badge / desc / trigger pills / 工具可用性 | ⚠️ 部分（缺 last run/checklist）|
+| **last run** | 13:42、持续在线、12:00 CI 等 mock | 无 | ❌（后端无字段，案例为 mock）|
+| **checklist N/11** | 11/11 或 10/11 mock | 无 | ❌（同上）|
 | **mutating / writes** | 未展示 | `Badge` amber/coral | ✅ 实现更好 |
 | **工具可用性** | 未展示 | `工具 X/Y 可用` + 受限计数 | ✅ 实现更强 |
-| **4. 搜索** | 名/描述/trigger；`data-testid=skills-search` | 同逻辑；无 testid | ✅ 功能对齐 |
-| **5. Skillify 按钮** | 工具栏右侧 accent 实心 + Sparkles | `PageHeader.right` 描边 + CircleHelp | ⚠️ 部分 |
+| **4. 搜索** | 名/描述/trigger；`data-testid=skills-search` | 同逻辑 + testid + URL hash 持久化 | ✅ 实现更强 |
+| **5. Skillify 按钮** | 工具栏右侧 accent 实心 + Sparkles | 工具栏 accent 实心 + Sparkles | ✅ 已对齐 |
 | **Why? topic** | `skillify-permanent-fix` | `WhyButton` + `why-topics.ts` 同 topic | ✅ 已对齐 |
-| **6. get_skill 详情** | 无（卡片不可点） | 无 | ❌ 均未做 |
-| **skillpack / advisor** | 未展示 | 未接 MCP | ❌ FRONTEND_PLAN 已列 |
-| **7. MCP 契约** | 静态 HTML | live `list_skills` + 门控空态 | ✅ 实现更强 |
-| **8. 测试** | data-testid 钩子 | Vitest 8 条 | ✅ 实现更强 |
-| **卡片点击 / Drawer** | 无 | 无 | ✅ 设计一致（均未做） |
+| **6. get_skill 详情** | 无（卡片不可点） | 卡片可点 → `SkillDetailDrawer`（host + brain-resident 双形态）| ✅ 实现更强 |
+| **skillpack** | 未展示 | `list_brain_skillpack` 区块 + pack skill 可点开详情 | ✅ 实现更强 |
+| **advisor** | 未展示 | 未接（语义非 skill 专属，已落到「今日动态」页）| ✅ 设计正确 |
+| **7. MCP 契约** | 静态 HTML | live `list_skills` / `get_skill` / `list_brain_skillpack` + 门控空态 | ✅ 实现更强 |
+| **8. 测试** | data-testid 钩子 | Vitest 21 条 | ✅ 实现更强 |
+| **卡片点击 / Drawer** | 无 | 卡片 + pack skill 均可点 → Drawer | ✅ 实现更强 |
+| **规模化护栏** | 无 | 渐进渲染上限 60 + 「显示更多」| ✅ 实现更强 |
 
 ---
 
@@ -212,7 +232,7 @@ const PREFERRED_SECTION_ORDER = [
 - section 彩色 badge
 - trigger 单行 `trigger · a / b` 格式
 
-**详情层：** 案例与实现均 **不支持点击卡片**。后端已有 `get_skill`（返回 SKILL.md 正文 + allowlisted frontmatter），前端与 FRONTEND_PLAN 规划的「展开版本、diff」均未接。
+**详情层（已落地）：** 卡片可点击 → `SkillDetailDrawer` 调 `get_skill` 展示 SKILL.md 正文 + allowlisted frontmatter + 工具可用性；`list_brain_skillpack` 卡片里的 pack skill 也可点击（带 `source_id` 走 brain-resident 分支，返回 `ResidentSkillDetail`）。仅 FRONTEND_PLAN 规划的「版本 diff」因后端无版本历史仍未接。
 
 #### SkillEntry 类型（admin mirror）
 
@@ -303,10 +323,10 @@ CLI：`gbrain skillify check` → properly skilled / close / needs skillify。Sk
 
 | 项 | 案例 | 实现 |
 |----|------|------|
-| 按钮位置 | 工具栏 `ml-auto` | `PageHeader.right` |
-| 样式 | `bg-accent` 实心 + Sparkles 13px | 描边 + `CircleHelp` 14px |
-| 页头叙事 | h1 含 checklist 全绿 | subtitle 一句 + inline `WhyButton` |
-| testid | `skillify-button` | 无 |
+| 按钮位置 | 工具栏 `ml-auto` | 工具栏右侧 `shrink-0` | 
+| 样式 | `bg-accent` 实心 + Sparkles 13px | `bg-accent` 实心 + Sparkles 14px |
+| 页头叙事 | h1 含 checklist 全绿 | h1 动态统计 + subtitle inline `WhyButton` |
+| testid | `skillify-button` | ✅ `skillify-button` |
 
 ---
 
@@ -315,28 +335,33 @@ CLI：`gbrain skillify check` → properly skilled / close / needs skillify。Sk
 ```
 BrainLayout (#/skills nav)
     └── App.tsx renderBrainPage → Skills.tsx
-            ├── useMcp('list_skills')     ← mcp-client / Tier3
-            ├── PageHeader                ← components/brain/PageHeader.tsx
-            ├── WhyButton / useWhy        ← WhyButton.tsx + WhyProvider.tsx
-            ├── AsyncState                ← loading / error / empty
-            ├── Badge                     ← mutating / writes（案例无）
-            └── 内联 skill 卡片           ← 无 SkillCard.tsx 抽取
+            ├── useMcp('list_skills')         ← mcp-client / Tier3
+            ├── useMcp('list_brain_skillpack')← 门控态下不发起
+            ├── PageHeader                    ← components/brain/PageHeader.tsx
+            ├── WhyButton / useWhy            ← WhyButton.tsx + WhyProvider.tsx
+            ├── AsyncState                    ← loading / error / empty
+            ├── SkillCard.tsx                 ← 已抽取（含 SkillToolsPreview）
+            └── SkillDetailDrawer.tsx         ← useMcp('get_skill', {name, source_id?})
+                                                 host=GetSkillResult / resident=ResidentSkillDetail
 
 后端：
-    operations.ts list_skills / get_skill
-        └── skill-catalog.ts
-                ├── loadOrDeriveManifest
-                ├── buildTriggerMap ← skill-trigger-index.ts
-                └── parseSkillFrontmatter ← skill-frontmatter.ts
+    operations.ts list_skills / get_skill / list_brain_skillpack
+        ├── skill-catalog.ts (host 目录)
+        │       ├── loadOrDeriveManifest
+        │       ├── buildTriggerMap ← skill-trigger-index.ts
+        │       └── parseSkillFrontmatter ← skill-frontmatter.ts
+        └── skillpack/brain-resident-locate.ts (per-source pack)
+                ├── loadResidentPacksForServer  ← list_brain_skillpack
+                └── getResidentSkillDetail      ← get_skill({source_id})
 ```
 
 | FRONTEND_PLAN 规划 | 状态 |
 |-------------------|------|
 | `list_skills` | ✅ 已接 |
-| `get_skill` 详情 | ❌ 未接 |
-| `list_brain_skillpack` | ❌ 未接 |
-| `advisor` 建议 | ❌ 未接 |
-| 版本时间线 + diff | ❌ 未接 |
+| `get_skill` 详情 | ✅ 已接（`SkillDetailDrawer`，host + brain-resident 双形态）|
+| `list_brain_skillpack` | ✅ 已接（区块 + pack skill 可点开详情）|
+| `advisor` 建议 | ➖ 已改落到「今日动态」页（语义非 skill 专属）|
+| 版本时间线 + diff | ❌ 未接（后端无 skill 版本历史）|
 
 ---
 
@@ -359,10 +384,11 @@ stateDiagram-v2
 | skills 列表 | — | 42 条静态 | `useMcp` → `list_skills` |
 | `query` | `useState('')` | ✅ | ✅ |
 | `activeSection` | `useState('all')` | ✅ | ✅ |
-| `selectedSkill` | — | ❌ | ❌ |
-| filter URL 同步 | — | ❌ | ❌ |
-| 卡片 hover | `hover:border-emphasis` | ✅ | ❌ |
-| 卡片 click | 无 | 无 | 无 |
+| `selectedSkill` | `useState<{name, sourceId?}｜null>` | ❌ | ✅ |
+| filter URL 同步 | hash `replaceState` + `hashchange` | ❌ | ✅ |
+| 渐进渲染 `visibleCount` | `useState(60)` | — | ✅ |
+| 卡片 hover | `hover:border-emphasis` | ✅ | ✅ |
+| 卡片 click | 打开详情抽屉 | 无 | ✅ |
 
 **门控降级（实现独有）：** 当 `mcp.publish_skills` 未开启或 skills 目录不可用时，显示配置指引（`gbrain config set mcp.publish_skills true` 等），而非裸 MCP 错误。
 
@@ -419,12 +445,13 @@ stateDiagram-v2
 | 实现选择 | 评价 |
 |----------|------|
 | `list_skills` MCP 只读目录 | ✅ 正确：fork-safe，不碰 `src/` |
-| 客户端 filter 而非服务端 `section` | ✅ 可接受：skill 数量级小；可后续优化 |
+| 客户端 filter 而非服务端 `section` | ✅ 正确：后端 `list_skills` 无分页，一次已返回全量，服务端下推为已有数据子集，净收益零（详见「性能护栏」）|
 | 展示 tools 可用性而非 mock last run | ✅ 诚实：反映 MCP scope 真实约束 |
 | Skillify 仅 Why 教育、不嵌 CLI | ✅ 与案例一致；执行 belong CLI/agent |
-| 无 get_skill Drawer | ⚠️ 可接受 MVP；FRONTEND_PLAN 下一步 |
-| 省略 checklist / last run | ⚠️ 与案例叙事 gap 大；需后端字段或 CLI 包装 |
-| 单文件 Skills.tsx、无 SkillCard 抽取 | ✅ MVP 合理； polish 时可抽组件 |
+| `get_skill` 详情抽屉（host + brain-resident 双形态）| ✅ 已落地，判别 `'frontmatter' in data` |
+| 省略 checklist / last run | ⚠️ 与案例叙事 gap 大；需后端字段或 CLI 包装（后端当前无）|
+| 抽取 `SkillCard.tsx` | ✅ 已抽取，降低 `Skills.tsx` 复杂度 |
+| 渐进渲染护栏（上限 60 + 显示更多）| ✅ 兜住大目录 DOM 成本，零依赖，符合 DESIGN.md |
 
 ---
 
@@ -436,15 +463,17 @@ stateDiagram-v2
 2. **工具可用性**：Agent 部署时常遇 scope 不足；`1/3 可用 · 2 个受限` 比 mock last run 更 actionable。
 3. **门控友好**：publish 未开时给 copy-paste 修复命令，符合 ops 面板预期。
 4. **Skillify 叙事**：Why 面板把 meta skill 与 11 项 checklist 讲清楚，对齐产品「进化」主题。
-5. **测试**：搜索、分类、工具栏 Skillify、空态均有 Vitest。
+5. **详情可读**：点卡片/pack skill → 抽屉读 SKILL.md 正文（host + brain-resident 双形态）。
+6. **可分享 URL**：`#/skills?section=meta&q=x` 刷新恢复、可复制分享。
+7. **规模化护栏**：渐进渲染上限 + 「显示更多」，上千 skill 也不炸 DOM。
+8. **测试**：搜索、分类、工具栏 Skillify、详情抽屉、pack 点击、URL 初始化、渐进渲染、空态均有 Vitest（21 条）。
 
-### 可改进
+### 可改进（剩余）
 
-1. **健康度不可见**：用户看不到案例强调的 checklist / last run，「进化」感弱。
-2. **视觉密度**：2 列 + 大卡片 vs 案例 3 列紧凑网格，同屏信息量更少。
-3. **分类辨识度**：无色点/badge，七类在视觉上不够一眼分区。
-4. **无详情**：无法在本页读 SKILL.md 摘要或跳 resolver。
-5. **与 advisor / skillpack-check 断层**：高 leverage 动作在 advisor op，本页未集成。
+1. **健康度不可见**：用户看不到案例强调的 checklist / last run，「进化」感弱——**后端无字段**，需先定数据源（P3）。
+2. **无版本时间线**：「技能进化」标签的原始承诺仍未兑现——需后端 skill 版本快照（非 fork-safe）。
+3. **trigger 展示单一**：仅 pill，未并存案例的单行 `trigger · …` 模式（低优先级）。
+4. **与 skillpack-check 断层**：CI 型健康动作应跑 `gbrain skillify check` / `skillpack-check`，本页只读目录、不承接。
 
 ### 角色适用性
 
@@ -494,28 +523,37 @@ stateDiagram-v2
 
 ## 后续打磨优先级
 
-### P1 — 视觉对齐（约 1–2h，无后端改动）
+### ✅ P1 — 视觉对齐（已完成 2026-07 之前）
 
-1. 工具栏合一：搜索 + pill + Skillify 放入同一 `rounded-lg border` 容器（对齐案例）
-2. 分类 pill 色点 + 卡片 section 彩色 badge（复用 `tailwind.css` node/accent/amber token）
-3. 网格 `lg:grid-cols-3`；卡片 `hover:border-emphasis`
-4. 页头：Wrench 图标 + 动态 `{skills.length} 个 skill · {sections.length} 个分类`
-5. 补 `data-testid`：skills-search / skills-grid / skillify-button
+1. ✅ 工具栏合一：搜索 + pill + Skillify 同一 `rounded-lg border` 容器
+2. ✅ 分类 pill 色点 + 卡片 section 彩色 badge
+3. ✅ 网格 `lg:grid-cols-3`；卡片 `hover:border-emphasis`
+4. ✅ 页头：Wrench 图标 + 动态 `{skills.length} 个 skill · {sections.length} 个分类`
+5. ✅ `data-testid`：skills-search / skills-grid / skillify-button
 
-### P2 — 详情层（约 2–4h，仅前端 + 已有 get_skill）
+### ✅ P2 — 详情层（已完成 2026-07-14）
 
-6. 抽取 `SkillCard`；点击 → `Drawer` + `useMcp('get_skill', { name })` 展示 SKILL.md 摘要
-7. trigger 展示模式切换：pill（现） vs 案例单行 `trigger · …`（可并存）
+6. ✅ 抽取 `SkillCard`；点击 → `SkillDetailDrawer` + `get_skill` 展示 SKILL.md 正文
+   （host 目录 + brain-resident pack 双形态，pack skill 也可点开）
+7. ⚠️ trigger 展示模式切换：仍为 pill（案例单行 `trigger · …` 未并存，低优先级）
+
+### ✅ 性能护栏 — 规模化预案（已完成 2026-07-14）
+
+8a. ✅ **渐进渲染**：渲染上限 60 + 「显示更多」分批（`skills-load-more`），兜住上千卡片的 DOM 成本，零依赖。
+8b. ➖ **服务端 section 过滤下推**：**有意不做**。后端 `list_skills` 无分页，首个 `{}` 调用已一次性返回全量目录，
+    再按 section 二次取回的是内存里已有数据的子集，净收益为零。真正的下推要等后端支持分页——那在 upstream
+    `src/` 树，属**非 fork-safe**，须人工确认后独立 PR。触发条件与理由已在 `Skills.tsx` `filtered` 上方注释。
 
 ### P3 — 健康度 live 化（需后端或 CLI 包装，admin 边界外须记 CUSTOM.md）
 
-8. 新 op 或 admin 允许的最小 serve-http 区块：返回 per-skill `skillify check` 分数 → 卡片 `N/11`
-9. last run：需定义数据源（request log / skillopt config / minion 遥测）——案例值为 mock，不可直接抄
-10. 集成 `list_brain_skillpack` + advisor 只读建议（FRONTEND_PLAN §4.2）
+9. 新 op 或 admin 允许的最小 serve-http 区块：返回 per-skill `skillify check` 分数 → 卡片 `N/11`
+10. last run：需定义数据源（request log / skillopt config / minion 遥测）——案例值为 mock，不可直接抄
+11. advisor 只读建议已落到「今日动态」页（非本页；语义非 skill 专属）
 
 ### P4 — 文档
 
-11. `FRONTEND_PLAN.zh.md` §3.2 技能进化：补充当前 MVP 范围 vs 版本时间线规划
+12. ✅ 本文档（2026-07-14 校正 ❌→✅ 漂移）
+13. `FRONTEND_PLAN.zh.md` §3.2 技能进化：补充当前 MVP 范围 vs 版本时间线规划
 
 ---
 
@@ -523,16 +561,19 @@ stateDiagram-v2
 
 | 文件 | 职责 |
 |------|------|
-| `admin/src/pages/brain/Skills.tsx` | 页面主实现 |
-| `admin/src/pages/brain/__tests__/Skills.page.test.tsx` | 页面测试 |
-| `admin/src/lib/op-types.ts` | `SkillEntry` / `ListSkillsResult` mirror |
+| `admin/src/pages/brain/Skills.tsx` | 页面主实现（filter/URL/渐进渲染/skillpack）|
+| `admin/src/pages/brain/SkillCard.tsx` | 单卡片组件（含 SkillToolsPreview）|
+| `admin/src/pages/brain/SkillDetailDrawer.tsx` | `get_skill` 详情抽屉（host + brain-resident 双形态）|
+| `admin/src/pages/brain/__tests__/Skills.page.test.tsx` | 页面测试（21 条）|
+| `admin/src/lib/op-types.ts` | `SkillEntry` / `ListSkillsResult` / `ResidentSkillDetail` mirror |
 | `admin/src/lib/useMcp.ts` | Tier3 声明式调用 |
 | `admin/src/lib/why-topics.ts` | `skillify-permanent-fix` 内容 |
+| `admin/src/routes.ts` | `#/skills` 路由与侧栏 + `parseHash`（URL 持久化）|
 | `admin/src/components/brain/PageHeader.tsx` | 页头 |
 | `admin/src/components/brain/Badge.tsx` | mutating / writes |
-| `admin/src/components/brain/Drawer.tsx` | 详情层可复用（未接） |
-| `admin/src/routes.ts` | `#/skills` 路由与侧栏 |
-| `src/core/skill-catalog.ts` | list_skills / get_skill 实现 |
+| `admin/src/components/brain/Drawer.tsx` | 详情抽屉外壳（`SkillDetailDrawer` 已接）|
+| `src/core/skill-catalog.ts` | list_skills / get_skill（host 目录）实现 |
+| `src/core/skillpack/brain-resident-locate.ts` | list_brain_skillpack / get_skill(source_id) 实现 |
 | `src/core/skill-trigger-index.ts` | RESOLVER section + triggers |
 | `skills/skillify/SKILL.md` | 11 项 checklist 定义 |
 | `admin/docs/WHY_BUTTON_PLAN.zh.md` | Why topic 11 规划 |
@@ -545,6 +586,6 @@ stateDiagram-v2
 
 `07.GBrain _ 项目案例_技能进化.mhtml` 定义的是 **Skill 目录 + skillpack 健康度叙事（demo 态）**：42 张卡片、七色分类、last run 与 checklist 让用户感知「技能在运行且在进化」。
 
-仓库 `Skills.tsx` 在 **Brain 壳层、搜索过滤、七类分区、Skillify/Why 教育、live MCP 目录** 上与案例**骨架对齐**，并在 **工具 scope、mutating/writes、门控降级、Vitest** 方面**超出静态 demo**。
+仓库 `Skills.tsx` 已在 **Brain 壳层、搜索过滤、七类分区（含色点/彩色 badge）、3 列网格、`get_skill` 详情抽屉、`list_brain_skillpack`、Skillify/Why 教育、live MCP 目录、URL 持久化、渐进渲染** 上与案例**全面对齐**，并在 **工具 scope、mutating/writes、门控降级、Vitest（21 条）** 方面**超出静态 demo**。
 
-与案例的**最大 gap** 不是布局，而是 **`last_run` / `checklist N/11` 在后端 `list_skills` 中不存在**（案例为 mock），以及 **`get_skill` 详情、skillpack/advisor、版本时间线** 仍停留在规划阶段。优先 P1 视觉对齐可快速提升「像案例」；P2/P3 需明确 health 数据源后再做 live 化。
+与案例仅剩的**真实 gap** 是 **`last_run` / `checklist N/11` 在后端 `list_skills` 中不存在**（案例为 mock），以及 **版本时间线 + diff**（后端无 skill 版本历史）——两者都需要后端新增数据源，触及 upstream 树、属非 fork-safe。**服务端 section 过滤下推**经分析为净收益零（后端无分页），有意不做；规模化护栏改由客户端渐进渲染承担。advisor 因语义非 skill 专属已正确落到「今日动态」页。

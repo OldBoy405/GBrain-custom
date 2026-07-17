@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 const { callMcp } = vi.hoisted(() => ({
   callMcp: vi.fn(),
@@ -75,6 +75,11 @@ describe('Inbox 页面', () => {
     await waitFor(() => {
       expect(screen.getByText('1 条待处理')).toBeInTheDocument();
     });
+  });
+
+  it('PageHeader 下渲染 DeterministicExplainer 教育卡', async () => {
+    renderInbox();
+    expect(screen.getByText('示意基准（非实时触发）· 数字对应 Why? 面板同一组结论')).toBeInTheDocument();
   });
 
   it('通过专用 list_inbox 展示真实状态', async () => {
@@ -166,6 +171,45 @@ describe('Inbox 页面', () => {
     });
   });
 
+  it('永久删除失败时弹窗内展示错误且保持打开', async () => {
+    callMcp.mockImplementation((name: string) => {
+      if (name === 'list_inbox') return Promise.resolve(listResult);
+      if (name === 'discard_inbox_items') {
+        return Promise.resolve({
+          mode: 'hard',
+          discarded: [],
+          failed: [{ slug: item.slug, reason: 'hard_delete_failed' }],
+        });
+      }
+      return Promise.resolve({});
+    });
+    renderInbox();
+    await waitFor(() => {
+      expect(screen.getByText('Inbox A')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getAllByRole('checkbox')[1]);
+    fireEvent.click(screen.getByRole('button', { name: /丢弃/ }));
+    fireEvent.click(screen.getByLabelText(/永久删除/));
+    fireEvent.click(screen.getByLabelText(/我理解永久删除不可恢复/));
+    fireEvent.click(screen.getByRole('button', { name: '永久删除' }));
+
+    await waitFor(() => {
+      expect(callMcp).toHaveBeenCalledWith('discard_inbox_items', {
+        slugs: [item.slug],
+        mode: 'hard',
+        confirm_destructive: true,
+      });
+    });
+
+    // 失败原因必须在弹窗仍打开时可见——弹窗覆盖整个视口，页面工具栏里的
+    // actionError 在弹窗打开时对用户不可见，等价于「没起效」。
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() => {
+      expect(within(dialog).getByText(/失败/)).toBeInTheDocument();
+    });
+    expect(within(dialog).getByText(/hard_delete_failed/)).toBeInTheDocument();
+  });
+
   it('永久删除需勾选确认', async () => {
     callMcp.mockImplementation((name: string) => {
       if (name === 'list_inbox') return Promise.resolve(listResult);
@@ -198,6 +242,57 @@ describe('Inbox 页面', () => {
     renderInbox();
     fireEvent.click(screen.getByTestId('why-enrichment-pipeline'));
     expect(screen.getByText('src/core/inbox.ts')).toBeInTheDocument();
+  });
+
+  it('点击「新建采集」打开弹窗，提交后调用 put_page 并刷新列表', async () => {
+    let listCallCount = 0;
+    callMcp.mockImplementation((name: string) => {
+      if (name === 'list_inbox') {
+        listCallCount += 1;
+        return Promise.resolve(listResult);
+      }
+      if (name === 'put_page') {
+        return Promise.resolve({ slug: 'inbox/2026-07-13-abc123', status: 'created' });
+      }
+      if (name === 'trigger_inbox_enrichment') {
+        return Promise.resolve({ accepted: [{ slug: 'inbox/2026-07-13-abc123', job_id: 2, status: 'waiting' }], skipped: [] });
+      }
+      return Promise.resolve({});
+    });
+
+    renderInbox();
+    await waitFor(() => {
+      expect(screen.getByText('Inbox A')).toBeInTheDocument();
+    });
+    const initialListCalls = listCallCount;
+
+    fireEvent.click(screen.getByRole('button', { name: /新建采集/ }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('正文 *'), { target: { value: 'captured from admin' } });
+    fireEvent.click(screen.getByRole('button', { name: '采集' }));
+
+    await waitFor(() => {
+      expect(callMcp).toHaveBeenCalledWith(
+        'put_page',
+        expect.objectContaining({
+          slug: expect.stringMatching(/^inbox\//),
+          content: expect.stringContaining('captured from admin'),
+        }),
+      );
+    });
+    await waitFor(() => {
+      expect(callMcp).toHaveBeenCalledWith('trigger_inbox_enrichment', { slugs: [expect.stringMatching(/^inbox\//)] });
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/已采集 inbox\//)).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(listCallCount).toBeGreaterThan(initialListCalls);
+    });
   });
 
   it('选中后懒加载 get_inbox_item', async () => {

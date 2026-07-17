@@ -2854,7 +2854,7 @@ export class PGLiteEngine implements BrainEngine {
 
   async traversePaths(
     slug: string,
-    opts?: { depth?: number; linkType?: string; direction?: 'in' | 'out' | 'both'; sourceId?: string; sourceIds?: string[] },
+    opts?: { depth?: number; linkType?: string; direction?: 'in' | 'out' | 'both'; sourceId?: string; sourceIds?: string[]; frontierCap?: number },
   ): Promise<GraphPath[]> {
     const depth = opts?.depth ?? 5;
     const direction = opts?.direction ?? 'out';
@@ -2887,6 +2887,19 @@ export class PGLiteEngine implements BrainEngine {
       ptScope = `AND pt.source_id = $${idx}`;
     }
 
+    // frontier cap: parenthesize the recursive term with ORDER BY (slug, id) +
+    // LIMIT so each iteration emits at most N rows. Same "approximately
+    // per-BFS-layer" semantics + placement as traverseGraph. `wrapRec` is a
+    // no-op when unset (back-compat). All three recursive bodies alias the
+    // neighbor as p2, so ORDER BY p2.slug/p2.id is valid in every branch.
+    const cap = opts?.frontierCap;
+    let capTail = '';
+    if (cap !== undefined && cap > 0) {
+      params.push(cap);
+      capTail = ` ORDER BY p2.slug ASC, p2.id ASC LIMIT $${params.length}`;
+    }
+    const wrapRec = (body: string): string => (capTail ? `(${body}${capTail})` : body);
+
     let sql: string;
     if (direction === 'out') {
       sql = `
@@ -2894,17 +2907,18 @@ export class PGLiteEngine implements BrainEngine {
           SELECT p.id, p.slug, 0::int AS depth, ARRAY[p.id] AS visited
           FROM pages p WHERE p.slug = $1 ${seedScope}
           UNION ALL
-          SELECT p2.id, p2.slug, w.depth + 1, w.visited || p2.id
+          ${wrapRec(`SELECT p2.id, p2.slug, w.depth + 1, w.visited || p2.id
           FROM walk w
           JOIN links l ON l.from_page_id = w.id
           JOIN pages p2 ON p2.id = l.to_page_id
           WHERE w.depth < $2
             AND NOT (p2.id = ANY(w.visited))
             ${linkTypeWhere}
-            ${stepScope}
+            ${stepScope}`)}
         )
         SELECT w.slug AS from_slug, p2.slug AS to_slug,
-               l.link_type, l.context, w.depth + 1 AS depth
+               l.link_type, l.context, w.depth + 1 AS depth,
+               p2.title AS to_title, p2.type AS to_type
         FROM walk w
         JOIN links l ON l.from_page_id = w.id
         JOIN pages p2 ON p2.id = l.to_page_id
@@ -2919,20 +2933,22 @@ export class PGLiteEngine implements BrainEngine {
           SELECT p.id, p.slug, 0::int AS depth, ARRAY[p.id] AS visited
           FROM pages p WHERE p.slug = $1 ${seedScope}
           UNION ALL
-          SELECT p2.id, p2.slug, w.depth + 1, w.visited || p2.id
+          ${wrapRec(`SELECT p2.id, p2.slug, w.depth + 1, w.visited || p2.id
           FROM walk w
           JOIN links l ON l.to_page_id = w.id
           JOIN pages p2 ON p2.id = l.from_page_id
           WHERE w.depth < $2
             AND NOT (p2.id = ANY(w.visited))
             ${linkTypeWhere}
-            ${stepScope}
+            ${stepScope}`)}
         )
         SELECT p2.slug AS from_slug, w.slug AS to_slug,
-               l.link_type, l.context, w.depth + 1 AS depth
+               l.link_type, l.context, w.depth + 1 AS depth,
+               wp.title AS to_title, wp.type AS to_type
         FROM walk w
         JOIN links l ON l.to_page_id = w.id
         JOIN pages p2 ON p2.id = l.from_page_id
+        JOIN pages wp ON wp.id = w.id
         WHERE w.depth < $2
           ${linkTypeWhere}
           ${stepScope}
@@ -2946,17 +2962,18 @@ export class PGLiteEngine implements BrainEngine {
           SELECT p.id, 0::int AS depth, ARRAY[p.id] AS visited
           FROM pages p WHERE p.slug = $1 ${seedScope}
           UNION ALL
-          SELECT p2.id, w.depth + 1, w.visited || p2.id
+          ${wrapRec(`SELECT p2.id, w.depth + 1, w.visited || p2.id
           FROM walk w
           JOIN links l ON (l.from_page_id = w.id OR l.to_page_id = w.id)
           JOIN pages p2 ON p2.id = CASE WHEN l.from_page_id = w.id THEN l.to_page_id ELSE l.from_page_id END
           WHERE w.depth < $2
             AND NOT (p2.id = ANY(w.visited))
             ${linkTypeWhere}
-            ${stepScope}
+            ${stepScope}`)}
         )
         SELECT pf.slug AS from_slug, pt.slug AS to_slug,
-               l.link_type, l.context, w.depth + 1 AS depth
+               l.link_type, l.context, w.depth + 1 AS depth,
+               pt.title AS to_title, pt.type AS to_type
         FROM walk w
         JOIN links l ON (l.from_page_id = w.id OR l.to_page_id = w.id)
         JOIN pages pf ON pf.id = l.from_page_id
@@ -2983,9 +3000,71 @@ export class PGLiteEngine implements BrainEngine {
         link_type: r.link_type as string,
         context: (r.context as string) || '',
         depth: r.depth as number,
+        to_title: (r.to_title as string) ?? undefined,
+        to_type: (r.to_type as string) ?? undefined,
       });
     }
     return result;
+  }
+
+  async graphOverview(
+    opts?: { nodeLimit?: number; sourceId?: string; sourceIds?: string[] },
+  ): Promise<GraphNode[]> {
+    const nodeLimit = Math.max(1, Math.min(opts?.nodeLimit ?? 500, 2000));
+    const params: unknown[] = [nodeLimit];
+    // Source scope: applied to node selection only. Edge aggregation needs no
+    // separate scope because BOTH endpoints are constrained to top_nodes (which
+    // is already scoped) — from_page_id = tn.id and JOIN top_nodes on the target.
+    // Mirrors postgres-engine.graphOverview placement.
+    const useSourceIds = opts?.sourceIds && opts.sourceIds.length > 0;
+    let nodeScope = '';
+    if (useSourceIds) {
+      params.push(opts!.sourceIds);
+      nodeScope = `AND p.source_id = ANY($${params.length}::text[])`;
+    } else if (opts?.sourceId) {
+      params.push(opts.sourceId);
+      nodeScope = `AND p.source_id = $${params.length}`;
+    }
+
+    // deg: total degree per page (in+out) computed once via GROUP BY (O(links)),
+    // NOT a per-page correlated count. top_nodes = the nodeLimit highest-degree
+    // in-scope pages. Final: each top node's outgoing edges whose target is ALSO
+    // a top node (self-contained backbone). depth is 0 for all (root-less).
+    const { rows } = await this.db.query(
+      `WITH deg AS (
+         SELECT page_id, count(*) AS d FROM (
+           SELECT from_page_id AS page_id FROM links
+           UNION ALL
+           SELECT to_page_id AS page_id FROM links
+         ) x GROUP BY page_id
+       ),
+       top_nodes AS (
+         SELECT p.id, p.slug, p.title, p.type, COALESCE(d.d, 0) AS deg
+         FROM pages p LEFT JOIN deg d ON d.page_id = p.id
+         WHERE p.deleted_at IS NULL ${nodeScope}
+         ORDER BY deg DESC, p.slug ASC
+         LIMIT $1
+       )
+       SELECT tn.slug, tn.title, tn.type,
+         coalesce(
+           (SELECT jsonb_agg(DISTINCT jsonb_build_object('to_slug', p2.slug, 'link_type', l.link_type))
+            FROM links l
+            JOIN top_nodes p2 ON p2.id = l.to_page_id
+            WHERE l.from_page_id = tn.id),
+           '[]'::jsonb
+         ) AS links
+       FROM top_nodes tn
+       ORDER BY tn.deg DESC, tn.slug ASC`,
+      params
+    );
+
+    return (rows as Record<string, unknown>[]).map(r => ({
+      slug: r.slug as string,
+      title: r.title as string,
+      type: r.type as string,
+      depth: 0,
+      links: (typeof r.links === 'string' ? JSON.parse(r.links) : r.links) as { to_slug: string; link_type: string }[],
+    }));
   }
 
   async relationalFanout(

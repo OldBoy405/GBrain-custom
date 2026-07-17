@@ -38,7 +38,7 @@ export function TypedLinkDemo() {
   const graph = useMemo(() => (links && links.length > 0 ? toGraph(links) : null), [links]);
 
   return (
-    <section className="rounded-xl border border-hairline bg-surface p-5">
+    <section>
       <div className="type-section-label mb-1 flex flex-wrap items-center gap-2">
         <span>
           // LIVE TYPED-LINK DEMO ·{' '}
@@ -103,7 +103,7 @@ export function TypedLinkDemo() {
                     charge={-180}
                     linkDistance={60}
                     centering={0.05}
-                    height={240}
+                    height={640}
                   />
                 </div>
               )}

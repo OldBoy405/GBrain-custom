@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react';
-import { Search, Sparkles, Wrench } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Search, Wrench } from 'lucide-react';
 import { useMcp } from '../../lib/useMcp';
 import type { ListSkillsResult, SkillEntry, ListBrainSkillpackResult } from '../../lib/op-types';
-import { PageHeader, Badge, AsyncState, WhyButton, useWhy } from '../../components/brain';
-import { SkillDetailDrawer } from './SkillDetailDrawer';
+import { PageHeader, Badge, AsyncState, WhyButton } from '../../components/brain';
+import { parseHash } from '../../routes';
+import { SkillCard } from './SkillCard';
+import { SkillDetailDrawer, type SelectedSkill } from './SkillDetailDrawer';
 
 // 分类展示顺序对齐设计稿（ingest→enrich→…→meta）；未知 section 追加在后、字母序。
 const PREFERRED_SECTION_ORDER = ['ingest', 'enrich', 'brain-ops', 'research', 'publish', 'ops', 'meta'];
@@ -30,69 +32,53 @@ function colorVarFor(sectionColorIndex: Map<string, number>, section: string): s
   return idx === undefined ? 'var(--color-muted)' : `var(${SECTION_PALETTE[idx % SECTION_PALETTE.length]})`;
 }
 
-const TOOL_PREVIEW_MAX = 4;
+// 渐进渲染批量：先渲染前 N 张卡，「显示更多」再放一批。DOM 成本是本页唯一 fork-safe
+// 能兜住的规模化瓶颈（见 filtered 上方的护栏说明）。
+const RENDER_CHUNK = 60;
 
-/** 卡片上工具名缩短：`gbrain schema explain` → `explain`，`mcp:foo` → `foo`。 */
-function toolCardLabel(tool: string): string {
-  const t = tool.trim();
-  if (t.startsWith('gbrain ')) {
-    const rest = t.slice(7).trim();
-    const space = rest.indexOf(' ');
-    return space === -1 ? rest : rest.slice(space + 1).trim() || rest;
-  }
-  if (t.startsWith('mcp:')) return t.slice(4);
-  return t;
+/** 由当前 section/q 组装 `#/skills` 的可分享 hash。all + 空搜索 → 裸 `#/skills`。 */
+function buildSkillsHash(section: string, query: string): string {
+  const params = new URLSearchParams();
+  if (section !== 'all') params.set('section', section);
+  if (query.trim()) params.set('q', query.trim());
+  const qs = params.toString();
+  return qs ? `#/skills?${qs}` : '#/skills';
 }
 
-function SkillToolsPreview({
-  tools,
-  usableCount,
-  unavailableCount,
-}: {
-  tools: string[];
-  usableCount: number;
-  unavailableCount: number;
-}) {
-  if (tools.length === 0) return null;
-  const preview = tools.slice(0, TOOL_PREVIEW_MAX);
-  const truncated = tools.length > TOOL_PREVIEW_MAX;
-
-  return (
-    <div
-      className="mt-2"
-      title={truncated ? tools.map(toolCardLabel).join(', ') : undefined}
-    >
-      <ul className="m-0 list-none space-y-0.5 p-0 font-mono text-brain-2sm text-ink-soft">
-        {preview.map((t) => (
-          <li key={t} className="truncate">
-            <span className="text-muted">- </span>
-            {toolCardLabel(t)}
-          </li>
-        ))}
-        {truncated && (
-          <>
-            <li className="text-muted">.</li>
-            <li className="text-muted">.</li>
-            <li className="text-muted">.</li>
-          </>
-        )}
-      </ul>
-      <div className="mt-1 text-brain-2sm text-muted">
-        工具 {usableCount}/{tools.length} 可用
-        {unavailableCount > 0 && <span className="text-contra"> · {unavailableCount} 个受限</span>}
-      </div>
-    </div>
-  );
+function readFilterFromHash(): { section: string; query: string } {
+  const q = parseHash(window.location.hash).query;
+  return { section: q.get('section') ?? 'all', query: q.get('q') ?? '' };
 }
 
 export function Skills() {
   const { data, loading, error } = useMcp<ListSkillsResult>('list_skills', {});
   const skills = data?.skills ?? [];
-  const { open: openWhy } = useWhy();
 
-  const [query, setQuery] = useState('');
-  const [activeSection, setActiveSection] = useState('all');
-  const [selectedSkill, setSelectedSkill] = useState<string | null>(null);
+  // 初始 filter 从 URL 读取（可分享/可刷新恢复），对齐 Ask.tsx 的 hash 约定。
+  const [query, setQuery] = useState(() => readFilterFromHash().query);
+  const [activeSection, setActiveSection] = useState(() => readFilterFromHash().section);
+  const [selectedSkill, setSelectedSkill] = useState<SelectedSkill | null>(null);
+  const [visibleCount, setVisibleCount] = useState(RENDER_CHUNK);
+
+  // 本地改 filter → 写回 URL（replaceState：不污染前进/后退历史，也不触发 hashchange，
+  // 避免与下面的监听器互相打架）。
+  useEffect(() => {
+    const target = buildSkillsHash(activeSection, query);
+    if (window.location.hash !== target) {
+      window.history.replaceState(null, '', target);
+    }
+  }, [activeSection, query]);
+
+  // 外部 hash 变化（前进/后退、手改地址）→ 同步回状态。
+  useEffect(() => {
+    const onHash = () => {
+      const next = readFilterFromHash();
+      setQuery(next.query);
+      setActiveSection(next.section);
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
 
   // 按 section 归组 + 计数，用于筛选 pill（含各分类 skill 数）。
   const sections = useMemo(() => {
@@ -110,6 +96,13 @@ export function Skills() {
   );
 
   // 纯前端过滤：section pill + 名/描述/trigger 全文搜索（大小写不敏感）。
+  //
+  // 性能护栏（规模化预案）：
+  // - 渲染成本用「渐进渲染上限 + 显示更多」在客户端兜住（见 visibleCount / RENDER_CHUNK），
+  //   是当前唯一 fork-safe 且真正有收益的一环 —— 上千卡片只挂载可见批次，不炸 DOM。
+  // - 「服务端 section 过滤下推」暂不做：后端 list_skills 无分页，首个 { } 调用已一次性
+  //   返回全量目录，再按 section 二次取回的只是内存里已有数据的子集，净收益为零；真正的
+  //   下推要等后端支持分页（在 upstream src/ 树，属非 fork-safe，须人工确认）。
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return skills.filter((s: SkillEntry) => {
@@ -119,6 +112,14 @@ export function Skills() {
       return hay.includes(q);
     });
   }, [skills, activeSection, query]);
+
+  // filter 变化时重置渐进渲染窗口（否则切分类后残留上一次展开的数量）。
+  useEffect(() => {
+    setVisibleCount(RENDER_CHUNK);
+  }, [query, activeSection]);
+
+  const visible = filtered.slice(0, visibleCount);
+  const hasMore = filtered.length > visibleCount;
 
   // list_skills 受 mcp.publish_skills 门控、且需服务端有 skills 目录 —— 两类配置问题都友好降级。
   const gated = error && /publish|disabled|not enabled|skills directory|skills_dir|storage_error/i.test(error);
@@ -165,32 +166,21 @@ export function Skills() {
           {hasSkills && (
             <>
               <div className="mb-4 rounded-lg border border-hairline bg-surface p-4">
-                <div className="flex items-center gap-3">
-                  <div className="relative min-w-0 flex-1">
-                    <Search
-                      size={16}
-                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
-                      aria-hidden
-                    />
-                    <input
-                      type="search"
-                      data-testid="skills-search"
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      placeholder="搜索 skill 名 / 描述 / trigger…"
-                      aria-label="搜索技能"
-                      className="w-full rounded-lg border border-hairline bg-canvas py-2 pl-9 pr-3 text-brain-base text-ink transition placeholder:text-muted focus:border-accent focus:outline-none"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    data-testid="skillify-button"
-                    onClick={() => openWhy('skillify-permanent-fix')}
-                    className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-brain-base font-medium text-inverse transition hover:opacity-90"
-                  >
-                    <Sparkles size={14} aria-hidden />
-                    Skillify
-                  </button>
+                <div className="relative">
+                  <Search
+                    size={16}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
+                    aria-hidden
+                  />
+                  <input
+                    type="search"
+                    data-testid="skills-search"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="搜索 skill 名 / 描述 / trigger…"
+                    aria-label="搜索技能"
+                    className="w-full rounded-lg border border-hairline bg-canvas py-2 pl-9 pr-3 text-brain-base text-ink transition placeholder:text-muted focus:border-accent focus:outline-none"
+                  />
                 </div>
 
                 <div className="mt-3 flex flex-wrap gap-1" role="group" aria-label="按分类过滤">
@@ -224,52 +214,30 @@ export function Skills() {
                   无匹配技能。
                 </div>
               ) : (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="skills-grid">
-                  {filtered.map((s) => (
-                    <div
-                      key={s.name}
-                      onClick={() => setSelectedSkill(s.name)}
-                      className="cursor-pointer rounded-xl border border-hairline bg-surface p-5 transition hover:border-emphasis"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="font-mono text-brain-lg font-medium text-ink">{s.name}</div>
-                        <div className="flex gap-1">
-                          {s.mutating && <Badge tone="amber">mutating</Badge>}
-                          {s.writes_pages && <Badge tone="coral">writes</Badge>}
-                        </div>
-                      </div>
-                      <div className="mt-1">
-                        <span
-                          className="inline-block rounded-full border px-2 py-0.5 text-brain-2sm font-medium uppercase tracking-wider"
-                          style={{
-                            color: colorVarFor(sectionColorIndex, s.section),
-                            borderColor: colorVarFor(sectionColorIndex, s.section),
-                            background: `color-mix(in srgb, ${colorVarFor(sectionColorIndex, s.section)} 10%, transparent)`,
-                          }}
-                        >
-                          {s.section}
-                        </span>
-                      </div>
-                      <p className="mt-2 line-clamp-3 text-brain-base leading-relaxed text-ink-soft">{s.description}</p>
-                      {s.triggers?.length > 0 && (
-                        <div className="mt-3 flex flex-wrap gap-1">
-                          {s.triggers.slice(0, 4).map((t) => (
-                            <span key={t} className="rounded-full bg-accent-soft px-2 py-0.5 text-brain-2sm text-accent">
-                              {t}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {s.tools?.length > 0 && (
-                        <SkillToolsPreview
-                          tools={s.tools}
-                          usableCount={s.usable_tools.length}
-                          unavailableCount={s.unavailable_tools?.length ?? 0}
-                        />
-                      )}
+                <>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="skills-grid">
+                    {visible.map((s) => (
+                      <SkillCard
+                        key={s.name}
+                        skill={s}
+                        sectionColor={colorVarFor(sectionColorIndex, s.section)}
+                        onClick={() => setSelectedSkill({ name: s.name })}
+                      />
+                    ))}
+                  </div>
+                  {hasMore && (
+                    <div className="mt-4 flex justify-center">
+                      <button
+                        type="button"
+                        data-testid="skills-load-more"
+                        onClick={() => setVisibleCount((v) => v + RENDER_CHUNK)}
+                        className="cursor-pointer rounded-lg border border-hairline bg-surface px-4 py-2 text-brain-sm text-ink-soft transition hover:border-emphasis"
+                      >
+                        显示更多（+{Math.min(RENDER_CHUNK, filtered.length - visibleCount)}，共 {filtered.length}）
+                      </button>
                     </div>
-                  ))}
-                </div>
+                  )}
+                </>
               )}
             </>
           )}
@@ -301,8 +269,14 @@ export function Skills() {
                     {p.skills.length > 0 && (
                       <ul className="mt-3 space-y-1">
                         {p.skills.map((s) => (
-                          <li key={s.slug} className="text-brain-sm text-ink-soft">
-                            <span className="font-mono text-ink">{s.slug}</span> — {s.description}
+                          <li key={s.slug}>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedSkill({ name: s.slug, sourceId: p.source_id })}
+                              className="cursor-pointer text-left text-brain-sm text-ink-soft transition hover:text-accent"
+                            >
+                              <span className="font-mono text-ink">{s.slug}</span> — {s.description}
+                            </button>
                           </li>
                         ))}
                       </ul>
@@ -320,7 +294,7 @@ export function Skills() {
         </>
       )}
 
-      <SkillDetailDrawer name={selectedSkill} onClose={() => setSelectedSkill(null)} />
+      <SkillDetailDrawer skill={selectedSkill} onClose={() => setSelectedSkill(null)} />
     </div>
   );
 }

@@ -17,7 +17,7 @@ import type { QueryTrace } from '../../lib/op-types';
  *  - 卡片样式对齐 `docs/前端案例/03.GBrain _ 项目案例_精确检索.mhtml`，但那份案例稿里每步旁的
  *    毫秒数是静态案例数据，本组件不copy（会违反上面这条诚实声明），逐步耗时保持不展示。
  *
- * 步骤数据本身在 `lib/retrieval-steps.ts` 里共享给 `TraceWaterfall.tsx`（Jobs 页的
+ * 步骤数据本身在 `lib/retrieval-steps.ts` 里共享给 `TraceWaterfall.tsx`（Ask 页的
  * "最近一次 ask" 瀑布图复用同一套结构说明，避免两处定义漂移）。
  *
  * 面板自带 `sticky top-4 max-h-[80vh] overflow-y-auto`：检索栈卡片列表在自己的高度里

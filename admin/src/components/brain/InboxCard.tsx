@@ -35,6 +35,7 @@ export function InboxCard({
   const label = sourceLabel(source);
   const meta = statusMeta(item.status);
   const t = timeStr(item.updated_at);
+  const merging = item.status === 'merging';
 
   return (
     <button
@@ -47,12 +48,14 @@ export function InboxCard({
         className="shrink-0 pt-0.5"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.key === 'Enter' && e.stopPropagation()}
+        title={merging ? '合并中的条目暂不可勾选' : undefined}
       >
         <input
           type="checkbox"
           checked={checked}
+          disabled={merging}
           onChange={(e) => onCheck(item.slug, e.target.checked)}
-          className="cursor-pointer"
+          className="cursor-pointer disabled:cursor-not-allowed"
           style={{ accentColor: 'var(--color-accent)' }}
         />
       </label>

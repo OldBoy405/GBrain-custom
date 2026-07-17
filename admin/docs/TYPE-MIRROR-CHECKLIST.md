@@ -4,7 +4,7 @@
 无法直接 `import` 上游类型。因此 `admin/src/lib/op-types.ts` 是**手写镜像**，沿用
 `admin/src/lib/scope-constants.ts` 的既有模式。
 
-**没有为此新增 CI 脚本**（`scripts/` 是上游红线，不新增），改为在此人工核对。
+**没有为此新增 CI 脚本**（fork-safe 下不在 `scripts/` 新增；非 fork-safe 改动须人工确认），改为在此人工核对。
 每次 `git merge upstream/master` 后，若下列上游来源有改动，同步更新 `op-types.ts` 对应类型。
 
 ## 镜像映射表

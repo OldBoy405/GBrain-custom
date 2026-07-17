@@ -1,8 +1,9 @@
 # GBrain 个人运维清单（Windows + Ollama + Qwen3）
 
 > 面向本机 PGLite + `ollama:qwen3-embedding:4b` @ **1024 维** 的日常运维速查。  
-> 完整说明见 [`OPS_MANUAL.zh.md`](OPS_MANUAL.zh.md)。  
-> DeepSeek Chat、Tier 注入优先级、Schema Pack / Takes / Reranker 见手册 [**§8**](OPS_MANUAL.zh.md#8-模型-tier可选升级与检索精排)。
+> 完整说明见 [`OPS_MANUAL.zh.md`](OPS_MANUAL.zh.md)（**§2.6 入库落盘 · §3.4 绑定目录 · §9 指令总表**）。  
+> DeepSeek Chat、Tier 注入优先级、Schema Pack / Takes / Reranker 见手册 [**§8**](OPS_MANUAL.zh.md#8-模型-tier可选升级与检索精排)。  
+> 本机四层配置快照 + Ask/dream/embed 模型路由见 [`CONFIG_PLANES_AND_MODEL_ROUTING.zh.md`](CONFIG_PLANES_AND_MODEL_ROUTING.zh.md)。
 
 ---
 
@@ -25,6 +26,28 @@
 > **PGLite + Windows 不要用 `bun build --compile`**：`--compile` 产物无法正确释放 `pglite.data` WASM，会报 `$$bunfs/root` / `pglite.data` ENOENT（[#1340](https://github.com/garrytan/gbrain/issues/1340)）。PGLite 场景用 §1.2 的 **Bun shim**。
 >
 > **Windows Fork 不要用 `bun link -g`**：易把全局 `gbrain` 链到空目录。标准装法见 §1.2。
+
+---
+
+## 标准工作流（闭环速览）
+
+> 完整版见手册 [`OPS_MANUAL.zh.md`](OPS_MANUAL.zh.md) §10。贯穿原则:**先绑定落盘,写操作前停 `serve`,PGLite 的 job 一律 `--follow`**。
+
+```
+① 地基(一次)  init --pglite → import D:\MyBrain(绑定落盘) → config set search.mode/models.tier
+② 采集        capture "…" / capture --file / import <dir>        # 原始输入先进 inbox/,不纠结分类
+③ 入库落盘    sync → embed --stale → doctor --scope=brain --fast
+④ 结构化(周期) jobs submit inbox_enrich --follow / dream / enrich --thin
+⑤ 检索        query / think --json ·「状态」问题走 salience / whoknows / recall --today
+⑥ 运维        每天: sync + embed --stale + status ｜ 每周: dream + advisor + 备份
+```
+
+| 问题类型 | 用这个（别用 `search`） |
+|---------|------------------------|
+| 找内容 / 要答案 | `query "…"` / `think "…" --json`（含 gaps） |
+| 最近在忙什么 / 什么反常 | `salience --days 14` / `anomalies` |
+| 谁懂 X | `whoknows "<topic>" --explain` |
+| 今天记了啥 | `recall --today` |
 
 ---
 
@@ -101,6 +124,35 @@ gbrain config show
 
 > **§1.2 未完成前**：把上面 `gbrain` 换成 `bun run src/cli.ts` 即可继续 init/doctor。
 
+### 1.4 绑定笔记目录（入库落盘 · init 后建议立即做）
+
+仅 `init --pglite` 时，内容默认 **只在** `%USERPROFILE%\.gbrain\brain.pglite\`（数据库），**资源管理器里看不到 `.md`**。要用文件夹 / Git / Obsidian 管理笔记，须绑定落盘根目录：
+
+```powershell
+# 1. 建 brain 仓库根（可为空目录）
+New-Item -ItemType Directory -Force D:\MyBrain
+
+# 2. import 会写入 sync.repo_path，并把目录内已有 .md 灌进 DB
+gbrain import D:\MyBrain
+
+# 3. 验证
+gbrain config get sync.repo_path    # 应输出 D:\MyBrain
+gbrain sources list                 # default · N pages
+explorer D:\MyBrain\inbox           # capture 后可见 inbox\*.md
+```
+
+| 检查项 | 已落盘 | 仅 DB（你当前可能的状态） |
+|--------|--------|---------------------------|
+| `config get sync.repo_path` | 有路径 | `Config key not found` |
+| `sources list` | 有 `local_path` 或已 sync | `never synced`、无路径列 |
+| 资源管理器 | `{路径}\inbox\*.md` | 只有 `brain.pglite` 目录 |
+
+**已有 DB 内容、尚未落盘：** `gbrain import D:\MyBrain` 绑定路径后 `gbrain sync --repo D:\MyBrain`，或 `gbrain export --dir D:\MyBrain-export` 一次性导出。
+
+**PGLite：** `gbrain serve --http` 运行时，另开终端 CLI 可能 **连接超时** —— 写操前先停 serve。
+
+详见手册 [**§2.6 / §3.4 / §9.2**](OPS_MANUAL.zh.md#26-入库落盘syncrepo_path-与-sourceslocal_path)。
+
 ---
 
 ## 二、每次开机 / 开始工作前
@@ -120,24 +172,46 @@ bun -e "fetch('http://localhost:11434/v1/embeddings',{method:'POST',headers:{'Co
 
 ---
 
-## 三、日常导入与检索
+## 三、日常导入、入库与检索
 
 ```powershell
-# 导入笔记目录（首次或增量）
-gbrain import D:\path\to\notes
+# ── 落盘绑定（首次，见 §1.4）──
+gbrain import D:\MyBrain
 
-# 若笔记在 Git 仓库且已绑定 source
+# ── 单条入库 ──
+gbrain capture "要记住的想法"
+gbrain capture --file D:\notes\today.md
+
+# ── 增量同步（已绑定 Git 笔记库时）──
 gbrain sync
 
-# 补 embedding（换模型后或 signature 漂移）
+# ── 补 embedding ──
 gbrain embed --stale
 
-# 搜索
+# ── 检索 / 合成 ──
 gbrain search "你的问题"
-gbrain search "你的问题" --json
+gbrain think "你的问题" --json          # 含 gaps 证据缺口
+
+# ── 查看已入库（CLI）──
+gbrain list
+gbrain get inbox/2026-07-15-xxxxx
+
+# ── 仅 DB、要在资源管理器看：导出 ──
+gbrain export --dir D:\MyBrain-export
+explorer D:\MyBrain-export
 ```
 
-**推荐顺序：** `import` 或 `sync` →（必要时）`embed --stale` → `search`
+**推荐顺序：** `import`（§1.4）→ `capture` / Admin 采集 → `sync` →（必要时）`embed --stale` → `search` / `think`
+
+**Admin 界面（Fork 开发联调，可选）：**
+
+```powershell
+# 终端 1
+bun run src/cli.ts serve --http --port 3131
+# 终端 2
+cd admin; bun run dev
+# 浏览器：http://localhost:5173/admin/#/inbox  或  http://127.0.0.1:3131/admin/#/inbox
+```
 
 ---
 
@@ -332,6 +406,27 @@ Fork 二次开发后建议跑：`bun run typecheck` + `bun test test/embedding-d
 | `bun link -g gbrain` 报 `FileNotFound` / `EPERM` | Windows 上勿用；改用 §1.2 shim |
 | `PGLite failed... pglite.data` / `$$bunfs/root` | 用了 `bun build --compile` 的 exe；删 `gbrain.exe`，改 §1.2 shim |
 | `gbrain` 仍是上游版、无 Ollama 1024 维 | shim 路径指错仓库；检查 `gbrain.cmd` 内 `bun run ...\src\cli.ts` |
+| **`config get sync.repo_path` 找不到** | 未 `import` 绑定目录；内容仅在 DB，见 §1.4 |
+| **`sources list` 显示 never synced** | 未绑定 `local_path` / 未跑过 sync；先 §1.4 再 `sync` |
+| **资源管理器找不到 inbox/*.md** | 同上；或 `export --dir` 导出查看 |
+| **`sources list` / CLI 连接超时** | `serve --http` 占用 PGLite；停 serve 后再跑 CLI |
+| **`resolver_health` WARN：`Could not find skills directory`**（不在源码仓库内跑 doctor 时） | 跟上面那条源码仓库内的 `resolver_health` FAIL 是**两种不同场景**；见下方说明，别去改 `mcp.skills_dir`（不相关） |
+
+**`resolver_health` WARN vs `mcp.skills_dir`：两条不同的路径，勿混淆**
+
+- `resolver_health`（以及 `check-resolvable`/`routing-eval`）走本地自动探测：`$GBRAIN_SKILLS_DIR` → `$OPENCLAW_WORKSPACE` → 向上找 `skills/` → `~/.openclaw/workspace` → gbrain 仓库根 → `./skills`。**不读 `mcp.skills_dir`。**
+- `mcp.skills_dir` 只影响远程 MCP 的 `list_skills`/`get_skill`（给 Claude Code/Cursor 等 thin client 用，见§四）；**不设置时不等于跟 `resolver_health` 一样自动兜底**——真正的 MCP 调用永远被当成 `ctx.remote=true`，走的是**没有** install-path 兜底的探测版本，落不落到项目根 `skills/` 完全取决于 MCP server 进程的 cwd（需要在 `mcp.json` 里显式加 `cwd` 才保证，见§四）。两条路径只是常因同一个根本原因失败，不是"修好一个另一个自动跟着好"。
+- **不修的影响：** `doctor`（scope=all）只扣 5 分不影响 exit code；`check-resolvable`/`routing-eval` 会 exit 1（只有主动跑它们才碰到）；日常 `query`/`sync`/`embed` 不受影响；Claude Code 在本项目里的技能路由不受影响（直接读 checkout 里的文件，不走这条探测）。
+- **两个修复方案：**
+  ```powershell
+  # A（省事）：直接指向本仓库自带的 skills/
+  setx GBRAIN_SKILLS_DIR "C:\Users\<you>\Downloads\AI\gbrain\skills"
+  # B（独立）：scaffold 到自己的目录后，还要手动补一份 RESOLVER.md（scaffold 不碰路由文件）
+  gbrain skillpack scaffold --all --workspace "D:\MyBrain"
+  Copy-Item "...\gbrain\skills\RESOLVER.md" "D:\MyBrain\skills\RESOLVER.md"
+  ```
+- **根因更新（2026-07-16）：本仓库已修好了，大多数情况下上面两个方案都不需要。** 这其实是 Windows 上的一个真 bug——`path-confine.ts` 的 `isPathContained()` 分隔符硬编码成 `/`，Windows 的 `realpathSync()` 返回反斜杠路径，导致 `skills/` 明明就在当前目录下也被判定"找不到"。已修复（改用 `path.sep`），详见 `CUSTOM.md`。**修复后项目根目录下直接跑 `gbrain check-resolvable`/`gbrain doctor` 就应该自动探测到，不用再配 `$GBRAIN_SKILLS_DIR` 或 scaffold。**
+- 完整版（含 `mcp.publish_skills` 新装默认值说明）见手册 [`OPS_MANUAL.zh.md`](OPS_MANUAL.zh.md) §5.3。
 
 **诊断命令：**
 
@@ -364,14 +459,15 @@ gbrain init --force --pglite `
 
 ---
 
-## 十一、本环境不需要的操作
+## 十一、本环境不需要 / 可选的操作
 
 | 能力 | 原因 |
 |------|------|
-| `gbrain serve --http` + OAuth | PGLite 上 HTTP MCP 能力受限；个人本机用 stdio 即可 |
+| `gbrain serve --http` + OAuth（远程 MCP） | 个人本机 Cursor 用 **stdio** `gbrain serve` 即可 |
+| **`serve --http` + Admin** | **可选**：Fork 开发 Admin 联调时用（§三）；非远程 MCP 必需 |
 | `gbrain jobs work` 常驻 | 需 Postgres；PGLite 用 `jobs submit --follow` |
 | `gbrain migrate --to supabase` | 仅当笔记 >1000 或需多机共享时再考虑 |
-| 云 API Key（OpenAI 等） | 纯 Ollama 本地 embed 可不配；expansion/chat 功能才需要 |
+| 云 API Key（OpenAI 等） | 纯 Ollama embed 可不配；think/expansion 需 DeepSeek 等（见手册 §8） |
 
 ---
 
@@ -379,9 +475,60 @@ gbrain init --force --pglite `
 
 ```powershell
 gbrain doctor --scope=brain --fast
-gbrain sync          # 或 import <dir>
+gbrain sync                              # 或 capture / import（见 §1.4 是否已落盘）
 gbrain search "今天要查的内容"
+# 可选：gbrain think "..." --json
 ```
+
+---
+
+## 十三、常用指令速查（Windows 个人栈）
+
+| 指令 | 作用 |
+|------|------|
+| `gbrain doctor --scope=brain [--fast]` | 个人 brain 健康 |
+| `gbrain config show` / `config get sync.repo_path` | 配置 / 是否已落盘 |
+| `gbrain sources list` | source 与页数、同步状态 |
+| `gbrain import <dir>` | 绑定落盘目录 + 导入 |
+| `gbrain capture "…"` / `--file` | 单条入库 inbox |
+| `gbrain sync [--repo <dir>]` | 磁盘 ↔ DB |
+| `gbrain export --dir <out>` | 导出 .md 到资源管理器 |
+| `gbrain list` / `get <slug>` | 列页 / 读页 |
+| `gbrain search "q"` / `think "q"` | 检索 / 合成+gaps |
+| `gbrain embed --stale` | 补向量 |
+| `gbrain status` / `stats` / `health` | 状态盘 / 统计 / 健康盘 |
+| `gbrain advisor` | 「接下来该做什么」只读建议 |
+| `gbrain jobs submit inbox_enrich --params '{…}' --follow` | Inbox 结构化（PGLite） |
+| `gbrain serve` | Cursor stdio MCP |
+| `bun run src/cli.ts serve --http --port 3131` | Admin + HTTP MCP（开发） |
+
+完整分场景表见 [`OPS_MANUAL.zh.md` §9](OPS_MANUAL.zh.md#9-指令速查总表按场景)。
+
+---
+
+## 十四、进阶个人能力（发现 · 记忆 · 发散 · 维护）
+
+超出「导入→检索」的日常之外，这些命令是 gbrain 的高价值个人能力，PGLite 本机可直接用：
+
+| 指令 | 什么时候用 |
+|------|-----------|
+| `gbrain salience [--days N]` | 「我最近在忙什么 / 什么最热」——不给检索词的当前状态问题 |
+| `gbrain anomalies [--since D]` | 「最近什么反常」——按 tag/type 分组的统计异常 |
+| `gbrain whoknows <topic> [--explain]` | 「谁懂 X / 该找谁聊」——person/company 专家路由 |
+| `gbrain recall <entity>` / `recall --today` / `forget <id>` | 热记忆事实：某实体 / 今日 / 过期一条 |
+| `gbrain brainstorm <q>` / `lsd <q>` | 基于 brain 的点子发散（双联想 / 反向 judge） |
+| `gbrain think "q" --json` | 检索 + 合成答案 + **证据缺口 gaps** |
+| `gbrain enrich --thin --limit 50` | 把只有名字的 stub 页充实成有引用的实体页（brain 内部合成） |
+| `gbrain dream [--dry-run] [--json]` | 一次性隔夜维护周期（lint / 合成 / 模式）；比常驻 autopilot 更适合本机 |
+| `gbrain quarantine list` / `clear <slug>` | 看/放行被内容体检隔离的页 |
+| `gbrain restore <slug>` | 恢复 72h 内软删的页（**注意**：是 `restore`，不是 `pages restore`） |
+| `gbrain history <slug>` / `revert <slug> <ver>` | 页版本历史 / 回滚 |
+| `gbrain transcripts recent [--days N]` | 最近原始对话 transcript 摘要（local-only） |
+| `gbrain check-update` | 检查新版本 |
+
+**Push-based 上下文（v0.42/v0.43）：** `gbrain watch` 把对话喂进 stdin、主动流出相关页指针。PGLite 下 `watch` 会**整段占用**数据库连接（与 `serve` / 写操作互斥），建议分批跑或依赖 ambient reflex。详见手册 [`OPS_MANUAL.zh.md`](OPS_MANUAL.zh.md) §7.6。
+
+> **写未登记配置键需 `--force`：** `takes.*`、`agent.use_gateway_loop`、`pace.*` 不在白名单，`gbrain config set … --force` 才能写入（详见手册 §2.3 / §8）。
 
 ---
 
@@ -389,9 +536,13 @@ gbrain search "今天要查的内容"
 
 | 路径 | 说明 |
 |------|------|
-| `%USERPROFILE%\.gbrain\config.json` | 主配置 |
-| `%USERPROFILE%\.gbrain\brain.pglite\` | 数据库目录 |
-| `docs/operations/OPS_MANUAL.zh.md` | 完整运维手册 |
+| `%USERPROFILE%\.gbrain\config.json` | 主配置（引擎、embedding、API Key） |
+| `%USERPROFILE%\.gbrain\brain.pglite\` | **数据库**（非 markdown 笔记目录） |
+| **`sync.repo_path` 所指目录** | **Markdown 落盘根**（`gbrain import` 后才有；见 §1.4） |
+| `{sync.repo_path}\inbox\*.md` | 采集条目在资源管理器中的位置 |
+| `%USERPROFILE%\.gbrain\inbox\` | 可选：文件夹监听丢文件的入口 |
+| `docs/operations/OPS_MANUAL.zh.md` | 完整运维手册（§2.6 落盘 · §9 指令总表） |
+| `admin/docs/INBOX_API.zh.md` | Inbox 工作流 API |
 | `docs/integrations/embedding-providers.md` | Ollama 提供商说明 |
 | `bin/gbrain.exe` | `bun build --compile` 产物；**PGLite 场景勿用** |
 | `CUSTOM.md` | 本 Fork 改动记录 |

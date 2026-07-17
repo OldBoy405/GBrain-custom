@@ -74,9 +74,9 @@ beforeEach(() => {
 });
 
 describe('真理沉淀 · Compiled Truth 工作台', () => {
-  it('渲染标题真理沉淀与冲突组列表（无自由提问框）', async () => {
+  it('渲染标题 Compiled Truth 工作台与冲突组列表（无自由提问框）', async () => {
     renderPage();
-    expect(screen.getByText('真理沉淀')).toBeInTheDocument();
+    expect(screen.getByText('Compiled Truth 工作台')).toBeInTheDocument();
     // 对齐案例：不应有 think 问答的提问输入框。
     expect(screen.queryByPlaceholderText('想让大脑综合思考的问题…')).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByText('Dream Cycle 9 phase 顺序')).toBeInTheDocument());

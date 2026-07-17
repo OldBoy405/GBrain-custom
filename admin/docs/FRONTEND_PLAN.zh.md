@@ -1,7 +1,7 @@
 # GBrain 前端管理页面现代化方案（8 页 + 现有 admin 融合）
 
-> 状态：方案草案（未写代码）。本文档只放在 `admin/docs/`（前端专属文档目录），不触碰任何上游文件。
-> 目标：把 `docs/前端案例/` 下 8 个 MHTML 静态示例落地为动态页面，且保证后续 `git merge upstream/master` **零冲突**。
+> 状态：方案草案（未写代码）。本文档只放在 `admin/docs/`（前端专属文档目录）。
+> 目标：把 `docs/前端案例/` 下 8 个 MHTML 静态示例落地为动态页面；**默认 fork-safe**（只动 `admin/`），保证后续 `git merge upstream/master` **零冲突**。动 upstream 树见 `admin/CLAUDE.md` 非 fork-safe 例外（**须人工确认**）。
 > 所有结论均基于仓库实际代码：`admin/`（现有代码）、`src/core/operations.ts`（契约）、`src/commands/serve-http.ts`（HTTP 路由）、`admin/DESIGN.md`（设计规范）、8 个 MHTML 实测样式。
 
 ---
@@ -323,7 +323,7 @@ admin/
 | 类型安全用手写 mirror | **项目特有** | 因 admin 与 src/core 跨编译边界，照抄 `scope-constants.ts` 模式 |
 | 前端测试隔离在 admin/（Vitest） | **项目特有** | 上游用 Bun test + `test/` 红线，物理隔离避免污染 3700+ 测试 |
 | 不写 localStorage/sessionStorage 存令牌 | **项目特有** | 遵循 `api.ts` D11/D12 信任模型；Tier3 令牌仅内存 |
-| 依赖只进 admin/package.json | **项目特有** | 根 package.json 零新增，保零冲突 |
+| 依赖只进 admin/package.json | **项目特有** | fork-safe 默认；根 package.json 仅非 fork-safe 且人工确认后 |
 | `admin/dist` 提交进 git | **项目特有** | 二进制嵌入需要（`src/admin-embedded.ts`） |
 | SSE 连接管理（hidden 暂停+重连+退化轮询） | 通用建议 | `useSSE` 统一封装 |
 | 错误边界（React ErrorBoundary） | 通用建议 | 每表层一个兜底 |
@@ -346,10 +346,10 @@ admin/
 | `.gitignore` | 末尾追加（如 `admin/coverage/`、`admin/.vitest/`） | ✅ 允许（仅追加） |
 | `CUSTOM.md` | 追加记录 | ✅ 允许 |
 | `docs/operations/**` | 如需运维说明则更新已有二开文档 | ✅ 允许 |
-| `src/core/**` `src/mcp/**` `src/cli.ts` `scripts/**` `test/**` `skills/**` 根 `package.json` `README.md` | **不碰** | 🚫 严禁 |
-| `src/commands/serve-http.ts` | **Tier1/3 优先，尽量不碰**；已获准 Tier2 受控最小改动（单区块+注释包裹+记 CUSTOM.md+测试全绿），承担冲突风险 | ⚠️ 上游代码，能不碰就不碰 |
+| `src/core/**` `src/mcp/**` `src/cli.ts` `scripts/**` `test/**` `skills/**` 根 `package.json` `README.md` | fork-safe 下不碰 | ⚠️ 非 fork-safe；**须人工确认** + 独立 PR |
+| `src/commands/serve-http.ts` | Tier1/3 优先；Tier2 受控最小改动 | ⚠️ 非 fork-safe；**须人工确认**；单区块+注释包裹+记 CUSTOM.md+测试全绿 |
 
-**结论**：主力走"路线 A + Tier1/Tier3"，**不触碰任何上游文件**，`git merge upstream/master` 零冲突；仅极少数确需 cookie 专用端点的页面才动 `serve-http.ts`（Tier2），此时冲突面收敛到单个连续路由区块，并有 CUSTOM.md 追踪。
+**结论**：主力走"路线 A + Tier1/Tier3"，**默认只动 `admin/`**，`git merge upstream/master` 零冲突。极少数确需 cookie 专用端点时才动 `serve-http.ts`（Tier2，**非 fork-safe，须人工确认**），冲突面收敛到单个连续路由区块，并有 CUSTOM.md 追踪。
 
 ---
 

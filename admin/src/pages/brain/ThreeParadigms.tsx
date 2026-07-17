@@ -204,7 +204,7 @@ export function ThreeParadigms() {
         </div>
       </section>
 
-      <section className="brain-section-table py-14">
+      <section className="brain-section py-14">
         <h2 className="type-display type-paradigm-section mb-6 text-ink">架构对比</h2>
         <div className="overflow-x-auto rounded-xl border border-hairline bg-elevated">
           <table className="brain-table brain-paradigm-compare-table">
@@ -232,7 +232,7 @@ export function ThreeParadigms() {
         </div>
       </section>
 
-      <section className="brain-section-table pb-20">
+      <section className="brain-section pb-20">
         <div className="bg-paper-grain rounded-xl border border-hairline bg-elevated p-8">
           <Quote className="text-accent" size={24} aria-hidden />
           <p className="type-serif mt-3 text-brain-2xl leading-[1.6] text-ink">

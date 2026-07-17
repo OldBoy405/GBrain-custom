@@ -5,19 +5,48 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Scope: the `admin/` GBrain admin dashboard SPA. For the backend/CLI/MCP server, read the
 repo-root `CLAUDE.md` first — it owns the operations contract, engines, and release process.
 
-## The one rule that shapes everything: `admin/` is fork-safe
+## Fork-safe 默认策略 vs 非 fork-safe 例外
 
-This SPA is a downstream fork's addition layered on top of upstream gbrain. Every change
-must survive `git merge upstream/master` with **zero conflicts**. Concretely:
+This SPA is a downstream fork's addition layered on top of upstream gbrain. The **goal**
+is that the admin layer can usually `git merge upstream/master` with **zero conflicts**.
 
-- **Never edit files under `src/`, `scripts/`, `test/`, or the root `package.json`** to make
-  an admin feature work. All admin code, deps, and config live inside `admin/`.
+### 默认：fork-safe（Phase 1）
+
+Implement admin UI features **inside `admin/` only**. Prefer existing MCP ops
+(`/admin/api/op`, `/mcp`) over new backend code.
+
+- All admin code, deps, and config live inside `admin/`.
 - Add frontend deps with `cd admin && bun add <pkg>` — they go in `admin/package.json` only.
-- The compile boundary is real: `admin/tsconfig.json` scopes `include: ['src']` to
-  `admin/src/`, so you **cannot `import` from `../../src/core/*`**. Shared types are
-  hand-maintained mirrors (see "Type & scope mirrors" below).
-- `admin/dist/` is committed (it gets embedded into the compiled binary); `admin/node_modules/`
-  is git-ignored.
+- Admin tests live under `admin/src/**/*.test.{ts,tsx}` (`cd admin && bun run test`).
+  Do **not** add admin cases to the repo-root `test/` tree (upstream-owned).
+- `admin/dist/` is committed (embedded into the compiled binary); `admin/node_modules/` is
+  git-ignored.
+
+### upstream 树（merge 时与 upstream 冲突的高风险区）
+
+`src/`, `scripts/`, `test/`, root `package.json`, `VERSION`, `CHANGELOG.md`, and other
+files owned by upstream gbrain — not an absolute ban on backend work, but **off the
+default path** for admin features.
+
+### 例外：非 fork-safe（Phase 2）—— **须人工确认**
+
+When an admin feature **requires** new backend capability (new op, new route, processor
+skillpack, root deps, upstream tests, etc.):
+
+1. **Stop and ask the human operator to confirm** before editing anything in the upstream
+   tree. Agents must not proceed on their own inference — explicit yes/no required.
+2. Deliver as a **separate PR or commit** from fork-safe admin UI work; do not mix lanes in
+   one delivery unless the human explicitly approves that combined scope.
+3. Label the work **non-fork-safe** in PR title/body; expect manual conflict resolution on
+   `git merge upstream/master` and run `admin/docs/TYPE-MIRROR-CHECKLIST.md` afterward.
+4. Ideal end state: contribute upstream, or track fork-only patches (e.g. `CUSTOM.md`).
+
+### 编译边界（与是否改后端无关，始终成立）
+
+`admin/tsconfig.json` scopes `include: ['src']` to `admin/src/`, so you **cannot
+`import` from `../../src/core/*`**. The admin bundle is a browser SPA; core is Bun/DB
+server code. Shared shapes are **hand-maintained mirrors** (see "Type & scope mirrors"
+below); copy pure helpers into `admin/src/lib/` when behavior must match upstream.
 
 ## Commands (run from `admin/`)
 
@@ -103,8 +132,8 @@ Because of the compile boundary, two files are **hand-maintained duplicates** of
 - `admin/src/lib/op-types.ts` mirrors response shapes from `src/commands/serve-http.ts`,
   `src/core/operations.ts`, `src/core/types.ts`, etc. Follow the checklist in
   `admin/docs/TYPE-MIRROR-CHECKLIST.md` after `git merge upstream/master`. There is
-  deliberately **no CI guard** for these (adding `scripts/` is off-limits); it's a manual
-  cross-check. Some mirrors (`QueryResult`, `ThinkResult`) are intentionally loose — only
+  deliberately **no CI guard** for these (fork-safe 下不在 `scripts/` 新增；见上文非 fork-safe 例外);
+  it's a manual cross-check. Some mirrors (`QueryResult`, `ThinkResult`) are intentionally loose — only
   the fields the UI renders — so upstream adding fields never breaks the frontend.
 - `admin/src/lib/scope-constants.ts` mirrors `ALLOWED_SCOPES_LIST` from `src/core/scope.ts`.
   This one **is** guarded — `scripts/check-admin-scope-drift.sh` fails `bun run verify` if the

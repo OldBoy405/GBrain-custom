@@ -273,15 +273,21 @@ describe('Inbox deterministic workflow', () => {
     expect(await engine.getPage('inbox/hard', { sourceId: 'default', includeDeleted: true })).toBeNull();
   });
 
-  test('discard hard mode skips a page mid-enrichment instead of racing it', async () => {
+  test('discard hard mode deletes a merging page when confirmed (no permanent zombie)', async () => {
+    // A page whose inbox_enrich job died / never ran stays inbox_status: 'merging'
+    // forever. The old guard refused to hard-delete any 'merging' page, which turned
+    // those into un-deletable zombies. Since hard mode already requires an explicit
+    // confirm_destructive, and inbox_enrich re-checks page existence right before its
+    // merge write (a delete mid-job just fails that job cleanly), an explicitly
+    // confirmed hard delete must go through even when status is 'merging'.
     await put('inbox/hard-merging', '# Merging', { inbox_status: 'merging' });
     const result = await operationsByName.discard_inbox_items.handler(
       ctx(),
       { slugs: ['inbox/hard-merging'], mode: 'hard', confirm_destructive: true },
     ) as any;
-    expect(result.discarded).toEqual([]);
-    expect(result.failed).toEqual([{ slug: 'inbox/hard-merging', reason: 'enrichment_in_progress' }]);
-    expect(await engine.getPage('inbox/hard-merging', { sourceId: 'default' })).not.toBeNull();
+    expect(result.discarded).toEqual(['inbox/hard-merging']);
+    expect(result.failed).toEqual([]);
+    expect(await engine.getPage('inbox/hard-merging', { sourceId: 'default', includeDeleted: true })).toBeNull();
   });
 
   test('migration backfills legacy inbox frontmatter', async () => {

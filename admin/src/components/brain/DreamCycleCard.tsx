@@ -3,7 +3,9 @@ import { Moon } from 'lucide-react';
 import { useMcp } from '../../lib/useMcp';
 import { callMcp } from '../../lib/mcp-client';
 import type { StatusSnapshotResult } from '../../lib/op-types';
+import { formatDreamCycleOutcomes } from '../../lib/dream-cycle-outcomes';
 import { WhyButton } from './WhyButton';
+import { DreamCyclePipeline } from './DreamCyclePipeline';
 
 function formatWhen(iso: string | null): string {
   if (!iso) return '暂无记录';
@@ -21,26 +23,20 @@ function formatDuration(ms: number | null): string {
   return `${Math.round(ms / 60_000)}min`;
 }
 
-/** PhaseStatus values from src/core/cycle.ts ('ok' | 'warn' | 'fail' | 'skipped'). */
-const PHASE_STATUS_COLOR: Record<string, string> = {
-  ok: 'var(--color-ok)',
-  warn: 'var(--color-amber)',
-  fail: 'var(--color-contra)',
-  skipped: 'var(--color-muted)',
-};
-
 /**
- * Dream Cycle（autopilot-cycle 全量 phase 扫）最近一次运行摘要 + 手动触发。
+ * Dream Cycle（autopilot-cycle 全量 phase 扫）语义 pipeline + 产出摘要 + 手动触发。
  *
- * 诚实声明：`totals` 是最近一次完成的 autopilot-cycle job 的 `result.report.totals`
- * 原样透传（`get_status_snapshot` → `buildCycleSnapshot`），字段随实际跑过的 phase 变化
- * ——不假设固定 phase 数量（真实 `ALL_PHASES` 有 ~20+ 项，且部分按 pack/config 门控）。
+ * 诚实声明：7 组 phase 顺序为静态结构说明（镜像 ALL_PHASES）；status / duration /
+ * totals 来自 get_status_snapshot → cycle.last_full 的真实 job report。
  */
 export function DreamCycleCard() {
   const { data, reload } = useMcp<StatusSnapshotResult>('get_status_snapshot');
   const last = data?.cycle?.last_full ?? null;
   const [submitting, setSubmitting] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+
+  const outcomeLines = formatDreamCycleOutcomes(last?.totals ?? null, last?.phases ?? null);
+  const hasRun = last?.finished_at != null;
 
   const trigger = async () => {
     if (!window.confirm('将提交一次完整 dream cycle（autopilot-cycle），可能运行数分钟，确定？')) return;
@@ -57,60 +53,54 @@ export function DreamCycleCard() {
     }
   };
 
-  const totalsEntries = last?.totals ? Object.entries(last.totals) : [];
-
   return (
     <div className="rounded-lg border border-hairline bg-elevated p-5">
-      <div className="mb-2 flex items-baseline justify-between">
-        <div className="type-mono-tiny flex items-center gap-1.5">
-          <Moon size={11} aria-hidden />
-          // DREAM CYCLE
+      <div>
+        <div className="mb-2 flex items-baseline justify-between">
+          <div className="type-mono-tiny flex items-center gap-1.5">
+            <Moon size={11} aria-hidden />
+            // DREAM CYCLE
+          </div>
+          <WhyButton topic="dream-cycle" />
         </div>
-        <WhyButton topic="dream-cycle" />
+
+        <div className="flex items-start justify-between gap-3">
+          <h3 className="type-serif min-w-0 text-brain-lg font-semibold text-ink">
+            上次：{formatWhen(last?.finished_at ?? null)}
+            {last?.duration_ms != null && ` · ${formatDuration(last.duration_ms)}`}
+          </h3>
+          <button
+            type="button"
+            onClick={() => void trigger()}
+            disabled={submitting}
+            className="shrink-0 cursor-pointer rounded-md border border-hairline bg-canvas px-3 py-1.5 text-brain-sm text-ink-soft transition hover:bg-subtle disabled:opacity-50"
+          >
+            {submitting ? '提交中…' : '立即触发'}
+          </button>
+        </div>
+        <p className="mt-1 text-brain-xs text-muted">由 autopilot 按 source 扇出调度（非固定 cron）。</p>
+        {note && <p className="mt-1 text-brain-xs text-muted">{note}</p>}
       </div>
-      <h3 className="type-serif text-brain-lg font-semibold text-ink">
-        上次：{formatWhen(last?.finished_at ?? null)}
-        {last?.duration_ms != null && ` · ${formatDuration(last.duration_ms)}`}
-      </h3>
-      <p className="mt-1 text-brain-xs text-muted">由 autopilot 按 source 扇出调度（非固定 cron）。</p>
 
-      {totalsEntries.length > 0 ? (
-        <ul className="mt-3 space-y-1.5">
-          {totalsEntries.map(([key, value]) => (
-            <li key={key} className="flex items-baseline gap-2 text-brain-sm text-ink-soft">
-              <span className="w-[110px] shrink-0 font-mono text-brain-2xs uppercase text-accent">{key}</span>
-              <span className="truncate">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-3 text-brain-sm text-muted">尚无已完成的 dream cycle 记录。</p>
-      )}
-
-      {last?.phases && last.phases.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {last.phases.map((p) => (
-            <span
-              key={p.phase}
-              className="rounded-full border px-2 py-0.5 font-mono text-brain-2xs"
-              style={{ borderColor: `color-mix(in srgb, ${PHASE_STATUS_COLOR[p.status] ?? 'var(--color-muted)'} 40%, transparent)`, color: PHASE_STATUS_COLOR[p.status] ?? 'var(--color-muted)' }}
-              title={`${p.phase} · ${p.duration_ms}ms · ${p.summary}`}
-            >
-              {p.phase}
-            </span>
-          ))}
+      <div className="mt-3">
+        <div>
+          <div className="type-section-label mb-1.5">本轮产出</div>
+          {outcomeLines.length > 0 ? (
+            <ul className="list-none space-y-1 p-0 text-brain-sm text-ink-soft">
+              {outcomeLines.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-brain-sm text-muted">{hasRun ? '本轮无计数型产出' : '尚无产出计数'}</p>
+          )}
         </div>
-      )}
 
-      <button
-        type="button"
-        onClick={() => void trigger()}
-        disabled={submitting}
-        className="mt-3 w-full cursor-pointer rounded-md border border-hairline bg-canvas px-3 py-1.5 text-brain-sm text-ink-soft transition hover:bg-subtle disabled:opacity-50"
-      >
-        {submitting ? '提交中…' : '立即触发'}
-      </button>
-      {note && <p className="mt-2 text-brain-xs text-muted">{note}</p>}
+        <div className="mt-3">
+          <div className="type-section-label mb-1.5">语义 pipeline</div>
+          <DreamCyclePipeline phases={last?.phases ?? null} />
+        </div>
+      </div>
     </div>
   );
 }

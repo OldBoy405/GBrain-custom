@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildGraph, colorVarFor, pathsToNodes } from './graph-model';
+import { buildGraph, colorVarFor, edgeColorVarFor, pathsToNodes } from './graph-model';
 import type { GraphNode, GraphPath } from '../../lib/op-types';
 
 describe('buildGraph', () => {
@@ -67,13 +67,23 @@ describe('pathsToNodes', () => {
     ]);
   });
 
-  it('非根节点 title 兜底 slug、type 兜底 unknown', () => {
+  it('非根节点 title 兜底 slug、type 兜底 unknown（后端不带 to_title/to_type 时）', () => {
     const paths: GraphPath[] = [{ from_slug: 'root', to_slug: 'b', link_type: 'refs', context: '', depth: 1 }];
     const nodes = pathsToNodes(paths, 'root');
     const b = nodes.find((n) => n.slug === 'b')!;
     expect(b.title).toBe('b');
     expect(b.type).toBe('unknown');
     expect(b.depth).toBe(1);
+  });
+
+  it('后端带 to_title/to_type 时据此着色（恢复过滤模式类型色）', () => {
+    const paths: GraphPath[] = [
+      { from_slug: 'root', to_slug: 'acme', link_type: 'invested_in', context: '', depth: 1, to_title: 'Acme Inc', to_type: 'company' },
+    ];
+    const nodes = pathsToNodes(paths, 'root');
+    const acme = nodes.find((n) => n.slug === 'acme')!;
+    expect(acme.title).toBe('Acme Inc');
+    expect(acme.type).toBe('company');
   });
 
   it('多跳链路：中间节点既是 to 也是 from', () => {
@@ -90,5 +100,21 @@ describe('pathsToNodes', () => {
   it('无边时只有根节点', () => {
     const nodes = pathsToNodes([], 'solo');
     expect(nodes).toEqual([{ slug: 'solo', title: 'solo', type: 'unknown', depth: 0, links: [] }]);
+  });
+});
+
+describe('edgeColorVarFor', () => {
+  it('同一 link_type 恒得同色（确定性）', () => {
+    expect(edgeColorVarFor('invested_in')).toBe(edgeColorVarFor('invested_in'));
+  });
+
+  it('空 link_type 回退到 hairline', () => {
+    expect(edgeColorVarFor('')).toBe('--color-hairline');
+  });
+
+  it('返回值始终是一个 CSS 变量名', () => {
+    for (const t of ['invested_in', 'works_at', 'founded', 'refs', 'mentions']) {
+      expect(edgeColorVarFor(t)).toMatch(/^--color-/);
+    }
   });
 });

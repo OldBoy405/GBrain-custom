@@ -20,7 +20,7 @@
  */
 
 import { realpathSync, existsSync, type Stats } from 'fs';
-import { resolve as resolvePath, relative, isAbsolute, dirname, basename, join } from 'path';
+import { resolve as resolvePath, relative, isAbsolute, dirname, basename, join, sep } from 'path';
 
 /**
  * Symlink-safe path confinement: realpath BOTH sides, then a separator-aware
@@ -41,8 +41,11 @@ export function isPathContained(child: string, parent: string): boolean {
   } catch {
     return false; // missing / unresolvable path → not contained
   }
-  // Append a separator so /foo doesn't match /foobar.
-  const parentWithSep = resolvedParent.endsWith('/') ? resolvedParent : resolvedParent + '/';
+  // Append a separator so /foo doesn't match /foobar. Use the platform
+  // separator (`\` on Windows) — realpathSync returns backslash-separated
+  // paths there, so a hardcoded `/` never matches and isPathContained
+  // silently rejects every real subdirectory on Windows.
+  const parentWithSep = resolvedParent.endsWith(sep) ? resolvedParent : resolvedParent + sep;
   return resolvedChild === resolvedParent || resolvedChild.startsWith(parentWithSep);
 }
 

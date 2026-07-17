@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Inbox as InboxIcon, Zap, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Inbox as InboxIcon, Plus, Zap, Trash2 } from 'lucide-react';
 import { callMcp } from '../../lib/mcp-client';
 import { useInbox } from '../../lib/useInbox';
 import { useInboxDetail } from '../../lib/useInboxDetail';
@@ -18,7 +18,9 @@ import {
   InboxCard,
   InboxDetail,
   InboxDiscardDialog,
+  NewCaptureDialog,
   WhyButton,
+  DeterministicExplainer,
   type InboxDiscardMode,
 } from '../../components/brain';
 
@@ -119,6 +121,7 @@ export function Inbox() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [discardOpen, setDiscardOpen] = useState(false);
+  const [captureOpen, setCaptureOpen] = useState(false);
 
   const selectedListItem = useMemo(
     () => (selected ? items.find((it) => it.slug === selected) ?? null : null),
@@ -147,6 +150,25 @@ export function Inbox() {
       return true;
     });
   }, [items, filters, selected, displayItem]);
+
+  // 卡片勾选框在条目进入 merging 后会被禁用（不可再交互），所以一旦某个已勾选
+  // 的条目转为 merging，需要主动把它从 checked 里摘掉，否则用户会卡在一个既不能
+  // 取消勾选、又计入批量操作数量的状态里。
+  useEffect(() => {
+    setChecked((prev) => {
+      if (prev.size === 0) return prev;
+      const next = new Set(prev);
+      let changed = false;
+      for (const slug of prev) {
+        const item = items.find((it) => it.slug === slug);
+        if (item?.status === 'merging') {
+          next.delete(slug);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [items]);
 
   const handleToggleCheck = (slug: string, v: boolean) => {
     setChecked((prev) => {
@@ -221,20 +243,30 @@ export function Inbox() {
         'discard_inbox_items',
         { slugs: [...checked], mode, ...(mode === 'hard' ? { confirm_destructive: true } : {}) },
       );
+      // 部分失败时（如条目正在 enrichment 中被跳过）仍要反映已经真实发生的
+      // 删除：只从 checked 里摘掉真正 discarded 的 slug，并在有任何 discarded
+      // 时刷新列表——避免「3 条成功 2 条失败」被当成整体失败、界面停留在
+      // 删除前的状态。
+      if (result.discarded.length > 0) {
+        setChecked((prev) => {
+          const next = new Set(prev);
+          for (const slug of result.discarded) next.delete(slug);
+          return next;
+        });
+        if (selected && result.discarded.includes(selected)) setSelected(null);
+        reload();
+      }
       if (result.failed.length > 0) {
         setActionError(
-          `${mode === 'hard' ? '永久删除' : '软删除'}失败 ${result.failed.length} 条：${result.failed.slice(0, 3).map((x) => x.slug).join(', ')}`,
+          `${mode === 'hard' ? '永久删除' : '软删除'}失败 ${result.failed.length} 条：${result.failed.slice(0, 3).map((x) => `${x.slug}（${x.reason}）`).join(', ')}`,
         );
       } else {
-        setChecked(new Set());
-        if (selected && checked.has(selected)) setSelected(null);
         setDiscardOpen(false);
         setActionNotice(
           mode === 'hard'
             ? `已永久删除 ${result.discarded.length} 条`
             : `已软删除 ${result.discarded.length} 条（72h 内可 restore_page 恢复）`,
         );
-        reload();
       }
     } catch (e) {
       setActionError(e instanceof Error ? e.message : String(e));
@@ -261,14 +293,29 @@ export function Inbox() {
         title={`${totalLabel} 条待处理`}
         subtitle={`混合来源 · 自动 enrichment 4 步流水线。${stats.pending_enrich} 条待 enrich · 选中右侧可看 raw vs enriched diff。`}
         right={
-          <button
-            onClick={reload}
-            className="cursor-pointer rounded-lg border border-hairline px-3 py-1.5 text-brain-base text-ink-soft hover:bg-hairline/40 transition"
-          >
-            刷新
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCaptureOpen(true)}
+              className="flex cursor-pointer items-center gap-1.5 rounded-lg border-0 px-3 py-1.5 text-brain-base font-medium transition"
+              style={{ background: 'var(--color-accent)', color: 'var(--color-inverse)' }}
+            >
+              <Plus size={14} aria-hidden />
+              新建采集
+            </button>
+            <button
+              onClick={reload}
+              className="cursor-pointer rounded-lg border border-hairline px-3 py-1.5 text-brain-base text-ink-soft hover:bg-hairline/40 transition"
+            >
+              刷新
+            </button>
+          </div>
         }
       />
+
+      <div className="mb-4">
+        <DeterministicExplainer />
+      </div>
 
       <div
         className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-hairline p-3"
@@ -300,7 +347,10 @@ export function Inbox() {
 
         <button
           type="button"
-          onClick={() => setDiscardOpen(true)}
+          onClick={() => {
+            setActionError(null);
+            setDiscardOpen(true);
+          }}
           disabled={checked.size === 0 || actionLoading}
           className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-hairline bg-transparent px-3 py-1.5 text-brain-sm text-ink-soft transition hover:border-contra hover:text-contra disabled:opacity-40"
         >
@@ -381,8 +431,33 @@ export function Inbox() {
         count={checked.size}
         previewItems={discardPreview}
         busy={actionLoading}
+        error={discardOpen ? actionError : null}
         onCancel={() => setDiscardOpen(false)}
         onConfirm={handleDiscardConfirm}
+      />
+
+      <NewCaptureDialog
+        open={captureOpen}
+        onClose={() => setCaptureOpen(false)}
+        onCaptured={(result) => {
+          setCaptureOpen(false);
+          setActionError(null);
+          setActionNotice(null);
+          if (result.slugs.length > 0) {
+            const label =
+              result.slugs.length === 1 ? result.slugs[0] : `${result.slugs.length} 条（${result.slugs[0]} 等）`;
+            setActionNotice(`已采集 ${label}`);
+          }
+          if (result.failed.length > 0) {
+            setActionError(
+              `采集失败 ${result.failed.length} 条：${result.failed
+                .slice(0, 3)
+                .map((f) => `${f.name}（${f.error}）`)
+                .join(', ')}`,
+            );
+          }
+          reload();
+        }}
       />
     </div>
   );

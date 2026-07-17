@@ -4,7 +4,7 @@ import type { QueryTrace } from './op-types';
  * 12 步混合检索管道的结构说明（对齐 src/core/search/* 真实模块）。
  *
  * 共享于两处可视化：`components/brain/PipelineSteps.tsx`（Ask 页纵向清单）与
- * `components/brain/TraceWaterfall.tsx`（Jobs 页横向瀑布），避免同一套步骤描述
+ * `components/brain/TraceWaterfall.tsx`（Ask 页横向瀑布），避免同一套步骤描述
  * 在两个组件里各写一份、日后漂移。
  */
 export interface RetrievalStep {

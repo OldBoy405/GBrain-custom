@@ -288,7 +288,7 @@ export function TodayStory({
       <div className="brain-section py-20">
         <div className="mb-14 text-center">
           <div className="type-mono-tiny mb-2">// 屏 2 · 跨平台时间线 · 真实场景</div>
-          <h2 className="type-story-section text-ink">2个月前的笔记 → 今天的精准回答</h2>
+          <h2 className="type-story-section text-ink">3个月前的笔记 → 今天的精准回答</h2>
           <p className="mx-auto mt-3 max-w-2xl text-brain-md leading-relaxed text-ink-soft">
             滚动看 GBrain 怎么把跨平台 fragment（论文笔记 · 微信群聊 · 即刻收藏）拼成一条完整的时间线。
           </p>

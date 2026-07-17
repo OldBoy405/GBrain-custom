@@ -74,16 +74,17 @@ export function groupConflicts(findings: RawConflictFinding[]): ConflictGroupCor
     if (ra !== rb) parent.set(ra, rb);
   };
 
-  // Per-component accumulators keyed by a component member (resolved to root later).
+  // Two passes so the per-component tallies key off the FINAL root: pass 1
+  // unions every pair (roots settle), pass 2 tallies axis/severity against the
+  // now-stable root. Tallying inside pass 1 would key off the insert-time root,
+  // which later unions move — forcing a re-resolve on read.
+  const valid = findings.filter((f) => f.a?.slug && f.b?.slug && f.a.slug !== f.b.slug);
+  for (const f of valid) union(f.a.slug, f.b.slug);
+
   const axisCount = new Map<string, Map<string, number>>();
   const sevMax = new Map<string, ConflictSeverity | null>();
-
-  for (const f of findings) {
-    const a = f.a?.slug;
-    const b = f.b?.slug;
-    if (!a || !b || a === b) continue;
-    union(a, b);
-    const root = find(a);
+  for (const f of valid) {
+    const root = find(f.a.slug);
     // Tally axis frequency.
     if (f.axis) {
       const m = axisCount.get(root) ?? new Map<string, number>();
@@ -114,15 +115,11 @@ export function groupConflicts(findings: RawConflictFinding[]): ConflictGroupCor
     const slugs = [...members].sort();
     // Topic = most frequent axis across this component; else first member's tail.
     let topic = slugTail(slugs[0]);
-    const axes = mergeComponentValues(root, components, axisCount, find, (acc, m) => {
-      for (const [axis, n] of m) acc.set(axis, (acc.get(axis) ?? 0) + n);
-      return acc;
-    }, new Map<string, number>());
-    if (axes.size > 0) {
+    const axes = axisCount.get(root);
+    if (axes && axes.size > 0) {
       topic = [...axes.entries()].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]))[0][0];
     }
-    const severity = mergeComponentValues(root, components, sevMax, find, (acc, sev) =>
-      sev && (!acc || SEVERITY_RANK[sev] > SEVERITY_RANK[acc]) ? sev : acc, null as ConflictSeverity | null);
+    const severity = sevMax.get(root) ?? null;
     groups.push({
       id: `probe:${slugs.join('|')}`,
       topic,
@@ -139,26 +136,4 @@ export function groupConflicts(findings: RawConflictFinding[]): ConflictGroupCor
       a.id.localeCompare(b.id),
   );
   return groups;
-}
-
-// The axis/severity accumulators are keyed by the root that existed at insert
-// time; unions after insert can move roots, so re-resolve across the whole
-// component when reading. Generic fold shared by both accumulators — they
-// differ only in value shape (per-axis counts vs. a single severity), not in
-// the "walk this component's keys, skip non-members, fold" traversal.
-function mergeComponentValues<V>(
-  root: string,
-  components: Map<string, Set<string>>,
-  values: Map<string, V>,
-  find: (x: string) => string,
-  reducer: (acc: V, v: V) => V,
-  seed: V,
-): V {
-  const comp = components.get(root)!;
-  let acc = seed;
-  for (const [key, v] of values) {
-    if (!comp.has(key) && find(key) !== root) continue;
-    acc = reducer(acc, v);
-  }
-  return acc;
 }

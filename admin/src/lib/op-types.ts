@@ -92,6 +92,16 @@ export interface PageSummary {
   deleted_at?: string;
 }
 
+/** MIRROR OF operations.ts `get_page` 返回项（宽松镜像，按需取字段）。 */
+export interface PageDetail {
+  slug: string;
+  type?: string;
+  title?: string;
+  compiled_truth?: string;
+  updated_at?: string;
+  resolved_slug?: string;
+}
+
 /** MIRROR OF operations.ts `query` 结果项（宽松镜像，按需取字段）。 */
 export interface QueryResult {
   page_id?: number | string;
@@ -188,6 +198,21 @@ export interface ResidentPackEntry {
 /** MIRROR OF skillpack/brain-resident-locate.ts `ResidentPackResult`（`list_brain_skillpack` 返回）。 */
 export interface ListBrainSkillpackResult {
   packs: ResidentPackEntry[];
+}
+
+/**
+ * MIRROR OF skillpack/brain-resident-locate.ts `ResidentSkillDetail`。
+ * `get_skill` 带 `source_id` 时走 brain-resident 分支，返回的是这个形态（无
+ * frontmatter / usable_tools / client_guidance），与 host 目录的 `GetSkillResult`
+ * 不同。SkillDetailDrawer 用 `'frontmatter' in data` 判别两者。
+ */
+export interface ResidentSkillDetail {
+  source_id: string;
+  pack_name: string;
+  slug: string;
+  description: string;
+  /** 完整 SKILL.md 正文（size-capped）。 */
+  body: string;
 }
 
 /** MIRROR OF advisor/types.ts `AdvisorSeverity`。 */
@@ -324,8 +349,8 @@ export interface GraphNode {
 
 /**
  * MIRROR OF types.ts `GraphPath`（traverse_graph 传了 link_type/direction 时
- * 切换到的返回项——只有边信息，没有 title/type，见 operations.ts:2332-2337 的
- * 「Backward compat」分支注释）。
+ * 切换到的返回项——边信息 + to_slug 的 title/type，见 operations.ts 的
+ * 「Backward compat」分支注释）。to_title/to_type 可选（旧后端不带时兜底）。
  */
 export interface GraphPath {
   from_slug: string;
@@ -333,6 +358,8 @@ export interface GraphPath {
   link_type: string;
   context: string;
   depth: number;
+  to_title?: string;
+  to_type?: string;
 }
 
 /**
@@ -446,6 +473,15 @@ export interface MinionJobRow {
   finished_at: string | null;
   /** v0.43.x fork: backend-authoritative lane, derived from worker.register(...) names in jobs.ts. */
   execution_lane: 'shell' | 'subagent' | 'handler';
+  /**
+   * Lock expiry for an `active` row. `queue.ts:getStats()` defines "stalled" as
+   * `status='active' AND lock_until < now()` (worker died/hung, awaiting the
+   * next stall-sweep) — same real field, same definition, used to flag stalled
+   * cards in the UI instead of inventing a separate notion of "stalled".
+   */
+  lock_until: string | null;
+  /** How many times this job has already been requeued after stalling. */
+  stalled_counter: number;
 }
 
 /** MIRROR OF commands/status.ts `CycleRow`（buildCycleSnapshot 的一行）。 */

@@ -11,6 +11,7 @@ export function InboxDiscardDialog({
   count,
   previewItems,
   busy,
+  error,
   onCancel,
   onConfirm,
 }: {
@@ -18,6 +19,10 @@ export function InboxDiscardDialog({
   count: number;
   previewItems: InboxItem[];
   busy?: boolean;
+  /** 上次提交的失败原因。弹窗本身覆盖整个视口，失败时必须在此处可见——
+   *  页面其余部分（包括 Inbox.tsx 工具栏里的 actionError）被遮罩挡住，
+   *  不在此渲染会让用户误以为「点击没有反应」。 */
+  error?: string | null;
   onCancel: () => void;
   onConfirm: (mode: InboxDiscardMode) => void;
 }) {
@@ -122,6 +127,12 @@ export function InboxDiscardDialog({
               <li className="text-brain-xs text-muted">… 另有 {count - previewItems.length} 条</li>
             )}
           </ul>
+        )}
+
+        {error && (
+          <p className="mt-3 text-brain-sm" style={{ color: 'var(--color-contra)' }}>
+            {error}
+          </p>
         )}
 
         <div className="mt-6 flex justify-end gap-2">

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import type { GraphNode } from '../../lib/op-types';
-import { buildGraph, colorVarFor, type SimNode } from './graph-model';
+import { buildGraph, colorVarFor, edgeColorVarFor, type SimNode } from './graph-model';
 
 /**
  * 知识网络 canvas 渲染器（react-force-graph-2d）。
@@ -79,12 +79,19 @@ export function ForceGraph({
     return v;
   };
 
-  // 容器测宽（无 ResizeObserver 依赖）。
+  // 容器测宽：优先 ResizeObserver（侧栏折叠/布局变化即 reflow，不依赖窗口 resize）；
+  // 无 ResizeObserver 的环境（如 jsdom）回退到 window.resize。
   useEffect(() => {
+    const el = wrapRef.current;
     const measure = () => {
       if (wrapRef.current) setWidth(wrapRef.current.clientWidth);
     };
     measure();
+    if (el && typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(measure);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
   }, []);
@@ -123,8 +130,12 @@ export function ForceGraph({
         onNodeHover={(n: unknown) => setHoverSlug(n ? (n as FgNode).slug : null)}
         linkColor={(l: unknown) => {
           const link = l as FgLink;
-          if (hoverSlug && (idOf(link.source) === hoverSlug || idOf(link.target) === hoverSlug)) return accent;
-          return hairline;
+          // 悬停时命中边高亮为 accent；有悬停但未命中则淡到近乎隐形，聚焦邻域。
+          if (hoverSlug) {
+            return idOf(link.source) === hoverSlug || idOf(link.target) === hoverSlug ? accent : hairline;
+          }
+          // 无悬停：按 link_type 着色，让边的语义（invested_in 等）可见。
+          return resolve(edgeColorVarFor(link.link_type));
         }}
         linkWidth={(l: unknown) => {
           const link = l as FgLink;
