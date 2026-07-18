@@ -34,63 +34,63 @@
 
 #### A. 已提交（2026-07-03 ~ 07-04，在 `5a57912` 之前）
 
-| 日期 | 文件 / 符号位置 | 改动摘要 | 冲突整合原则 |
-|------|----------------|----------|--------------|
-| 2026-07-03 | `src/core/ai/dims.ts` · `dimsProviderOptions()` | 新增可选第 5 参 `providerId`；`providerId==='ollama'` 时对任意模型返回 `{ openaiCompatible: { dimensions } }` | 保留 5 参签名与 Ollama 分支；上游若改 embed 维度逻辑，在合并后的函数体末尾保留 Ollama 特例 |
-| 2026-07-03 | `src/core/ai/gateway.ts` · `embed()` | 调用 `dimsProviderOptions(...)` 时传入 `recipe.id` | 保留 `recipe.id` 传参；其余 embed 路径以上游为准 |
-| 2026-07-03 | `src/core/embedding-dim-check.ts` · `isCustomDimValidForProvider()` | 放行 Ollama 及 `user_provided_models` recipe 的显式自定义维度 | 保留放行规则；上游若新增 provider 校验分支，与之并列不互斥 |
-| 2026-07-03 | `test/ai/gateway.test.ts` | Ollama 维度传参 + `providerId` 向后兼容用例 | 测试文件：两边用例都保留 |
-| 2026-07-03 | `test/embedding-dim-check.test.ts` | Ollama / llama-server / litellm 维度用例 | 同上 |
-| 2026-07-04 | `src/core/config.ts` · `deepseek_api_key` | 文件平面字段 + `DEEPSEEK_API_KEY` env + `KNOWN_CONFIG_KEYS` 注册 | 保留字段注册行；上游新增 key 时一并注册，不删 DeepSeek |
-| 2026-07-04 | `src/core/ai/build-gateway-config.ts` | `deepseek_api_key`→`DEEPSEEK_API_KEY`；`DEEPSEEK_BASE_URL`→`base_urls.deepseek` | 保留 DeepSeek env 注入；与 openai/anthropic 同模式并列 |
-| 2026-07-04 | `src/core/ai/recipes/deepseek.ts` | `expansion` touchpoint；V4 模型列表；1M context | 整文件保留；上游若改 recipe 结构，迁移字段后保留 expansion 配置 |
-| 2026-07-04 | `src/core/model-pricing.ts` | 登记 `deepseek-v4-flash` / `deepseek-v4-pro` | 保留定价行；定价以本文件为唯一真源，不手抄到别处 |
-| 2026-07-04 | `test/ai/build-gateway-config.test.ts` 等 | DeepSeek config / expansion / 定价回归 | 两边用例都保留 |
+| 日期 | 文件 / 符号位置 | 改动摘要 | 改动原因 | 冲突整合原则 |
+|------|----------------|----------|----------|--------------|
+| 2026-07-03 | `src/core/ai/dims.ts` · `dimsProviderOptions()` | 新增可选第 5 参 `providerId`；`providerId==='ollama'` 时对任意模型返回 `{ openaiCompatible: { dimensions } }` | 本机 Ollama embed 需显式传 dimensions，上游默认路径不覆盖 | 保留 5 参签名与 Ollama 分支；上游若改 embed 维度逻辑，在合并后的函数体末尾保留 Ollama 特例 |
+| 2026-07-03 | `src/core/ai/gateway.ts` · `embed()` | 调用 `dimsProviderOptions(...)` 时传入 `recipe.id` | 把 recipe 身份传给 dims，才能触发 Ollama 特例 | 保留 `recipe.id` 传参；其余 embed 路径以上游为准 |
+| 2026-07-03 | `src/core/embedding-dim-check.ts` · `isCustomDimValidForProvider()` | 放行 Ollama 及 `user_provided_models` recipe 的显式自定义维度 | 避免 doctor/init 把合法自定义维度判为非法 | 保留放行规则；上游若新增 provider 校验分支，与之并列不互斥 |
+| 2026-07-03 | `test/ai/gateway.test.ts` | Ollama 维度传参 + `providerId` 向后兼容用例 | 锁住 Ollama 维度与向后兼容行为 | 测试文件：两边用例都保留 |
+| 2026-07-03 | `test/embedding-dim-check.test.ts` | Ollama / llama-server / litellm 维度用例 | 锁住本机/代理 provider 的维度放行规则 | 同上 |
+| 2026-07-04 | `src/core/config.ts` · `deepseek_api_key` | 文件平面字段 + `DEEPSEEK_API_KEY` env + `KNOWN_CONFIG_KEYS` 注册 | 接入 DeepSeek 作为可选 Chat/Expansion provider | 保留字段注册行；上游新增 key 时一并注册，不删 DeepSeek |
+| 2026-07-04 | `src/core/ai/build-gateway-config.ts` | `deepseek_api_key`→`DEEPSEEK_API_KEY`；`DEEPSEEK_BASE_URL`→`base_urls.deepseek` | 把 config/env 注入 gateway，与 openai/anthropic 同模式 | 保留 DeepSeek env 注入；与 openai/anthropic 同模式并列 |
+| 2026-07-04 | `src/core/ai/recipes/deepseek.ts` | `expansion` touchpoint；V4 模型列表；1M context | 提供 DeepSeek V4 recipe（含 expansion） | 整文件保留；上游若改 recipe 结构，迁移字段后保留 expansion 配置 |
+| 2026-07-04 | `src/core/model-pricing.ts` | 登记 `deepseek-v4-flash` / `deepseek-v4-pro` | 成本估算/eval 需要定价行，且定价唯一真源在此 | 保留定价行；定价以本文件为唯一真源，不手抄到别处 |
+| 2026-07-04 | `test/ai/build-gateway-config.test.ts` 等 | DeepSeek config / expansion / 定价回归 | 锁住 DeepSeek 接线与定价不漂移 | 两边用例都保留 |
 
 #### B. 未提交（2026-07-08 ~ 07-11，在 `5a57912` 之后）
 
-| 日期 | 文件 / 符号位置 | 改动摘要 | 冲突整合原则 |
-|------|----------------|----------|--------------|
-| 2026-07-09 | `src/commands/serve-http.ts` · `mcpOperations` | 上提 `operations.filter(!localOnly)`，`/mcp` 与 `/admin/api/op` 共用 | 保留上提后的单一来源；上游若改 filter 条件，合并条件后仍共用 |
-| 2026-07-09 | `src/commands/serve-http.ts` · `CUSTOM ADMIN ROUTES` | 新增 `POST /admin/api/op`（cookie `requireAdmin`→`dispatchToolCall`，响应 `{result:ToolResult}`） | **整块保留** BEGIN/END 标记内代码；上游路由追加后 CUSTOM 块贴末尾 |
-| 2026-07-08~11 | `src/core/inbox.ts` · **新文件** | Inbox 投影/状态：`pageToInboxItem`、`prepareInboxCaptureContent`、`patchInboxFrontmatter` 等 | 新文件无冲突；直接保留 |
-| 2026-07-08~11 | `src/core/types.ts` · `INBOX_STATUSES` / `INboxItem` / `InboxDetail` | `PageFilters` 之后追加 inbox 类型块 | 保留类型块；上游若在相邻位置加类型，顺序上 inbox 块不删 |
-| 2026-07-08~11 | `src/core/migrate.ts` · `inbox_workflow_frontmatter` | 回填存量 `inbox/*` 页的 `inbox_status` / `inbox_legacy_source` | 保留 migration 条目；**注意 version 序号**不与上游新 migration 撞号，必要时改序号 |
-| 2026-07-08~11 | `src/core/operations.ts` · `list_inbox` / `get_inbox_item` / `trigger_inbox_enrichment` / `discard_inbox_items` | 4 个新 op，插在 `list_pages` 与 `search` 之间 | 整段 op 定义保留；上游同位置新增 op 时按逻辑顺序并列，导出数组也要注册 |
-| 2026-07-08~11 | `src/core/operations.ts` · `find_conflicts` / `compile_truth` / `adopt_compiled_truth` | 真理沉淀 3 op + 导出数组注册 | 整段保留；`compile_truth` handler 依赖 `compile-truth.ts`，合并后确认 import 仍在 |
-| 2026-07-08~11 | `src/core/operations.ts` · `list_jobs` / `get_job` handler | 返回前 `.map()` 附加 `execution_lane`（`getExecutionLane(name)`） | 保留 `.map()` 追加；上游若改返回形状，在最终返回前加回 `execution_lane` |
-| 2026-07-11 | `src/core/operations.ts` · `query` op | 可选 `trace: boolean`；`trace===true` 时返回 `{results, trace}` | 保留 `trace` 参数与条件分支；注意 `capturedMeta` 变量名随上游同步 |
-| 2026-07-08~11 | `src/core/conflicts.ts` · **新文件** | `groupConflicts()` union-find 矛盾分组 | 新文件无冲突；直接保留 |
-| 2026-07-08~11 | `src/core/compile-truth.ts` · **新文件** | `compileTruth()` LLM 合并提案 + `parseCompileJSON` | 新文件无冲突；直接保留 |
-| 2026-07-08~11 | `src/core/minions/execution-lane.ts` · **新文件** | `getExecutionLane(name)` 纯函数 | 新文件无冲突；直接保留 |
-| 2026-07-08~11 | `src/core/minions/handlers/inbox-enrich.ts` · **新文件** | 零 LLM 确定性 enrichment handler | 新文件无冲突；直接保留 |
-| 2026-07-08~11 | `src/core/minions/handlers/ingest-capture.ts` · handler 体 | `isInboxSlug` 分支 → `prepareInboxCaptureContent`；`importFromContent` 传 `source_kind`/`source_uri` | 保留 inbox 分支与额外 opts；非 inbox 路径以上游为准 |
-| 2026-07-08~11 | `src/commands/jobs.ts` · `registerBuiltinHandlers` | 追加 `worker.register('inbox_enrich', makeInboxEnrichHandler(engine))` | 保留 register 行；不删上游新增 register |
-| 2026-07-11 | `src/commands/status.ts` · `CycleRow` / `toCycleRow()` | 新增 `phases` 字段，从 `result.report.phases` 投影 | 保留 `phases` 字段投影；上游改 `CycleRow` 时字段并列 |
-| 2026-07-11 | `src/cli.ts` · `case 'search': case 'query':` | `const results = Array.isArray(result) ? result : result?.results` 防御性解包 | **仅保留这一行解包**；其余格式化逻辑以上游为准 |
-| 2026-07-08~11 | `src/core/eval-shared/json-repair.ts` | `compile-truth.ts` 复用 `stripFences` / `tryParse` / `repairJson`（小改动） | 保留上游 json-repair 逻辑；二开若仅增加 export 使用方，不改修复算法 |
-| 2026-07-08~11 | `src/admin-embedded.ts` | admin `bun run build` 后嵌入的静态资源哈希刷新 | **不手改**——合并冲突时以 `bun run build:admin` 重新生成为准 |
-| 2026-07-08~11 | `test/inbox-workflow.test.ts` · **新文件** | inbox op + handler 集成测试 | 新文件保留 |
-| 2026-07-08~11 | `test/conflicts.test.ts` · **新文件** | `groupConflicts` 纯函数测试 | 新文件保留 |
-| 2026-07-08~11 | `test/compile-truth.test.ts` · **新文件** | `compileTruth` / `parseCompileJSON` 测试 | 新文件保留 |
-| 2026-07-08~11 | `test/ingestion/ingest-capture.test.ts` | inbox slug 捕获路径用例扩展 | 保留 inbox 用例；上游用例不删 |
-| 2026-07-14 | `src/core/operations.ts` · `traverse_graph` | 新增可选 `node_limit`（默认300，顶2000）/`frontier_cap`（默认200，顶1000，传0禁用）；`node_limit` 接线两引擎（后置稳定切片，因两引擎均已 `ORDER BY depth,slug`）；`frontier_cap` 透传给 `traverseGraph`/`traversePaths` | 保留两参数与切片逻辑；未传新参数时行为与旧版等价（node_limit 默认 300 会截断超大 hub，属故意的默认收紧——**若下游有依赖大结果集的调用方，需知会**）；上游若改返回形状，切片挪到新返回点 |
-| 2026-07-14 | `src/core/engine.ts` · `traversePaths` 接口签名 | opts 新增可选 `frontierCap?: number`（`TraverseGraphOpts.frontierCap` 本是上游 v0.36+ 已有能力，仅为 `traversePaths` 补齐同款） | 保留该字段；不影响未传该参的既有调用方 |
-| 2026-07-14 | `src/core/pglite-engine.ts` · `traversePaths()` | out/in/both 三分支：①递归项加 `frontierCap`（`ORDER BY p2.slug,p2.id LIMIT`包裹，无设时原样直通）；②最终 SELECT 补 `to_title`/`to_type`（in 方向另 `JOIN pages wp ON wp.id = w.id` 取 walk 节点自身元数据） | 保留 wrapRec 包裹与新增列；上游若重写函数体，把这两处改动重新贴回三个分支 |
-| 2026-07-14 | `src/core/postgres-engine.ts` · `traversePaths()` | 同 pglite-engine 语义，用 `sql` 标签模板拼接（`ReturnType<typeof sql>` 做参数类型会退化成 overload 签名报错，改成内联三元 `capped ? sql\`(${step} ORDER BY … LIMIT ${cap})\` : step`） | 保留三处内联写法；两引擎必须锁步改动（`test/e2e/engine-parity.test.ts` DATABASE_URL 门控兜底，本地默认 skip） |
-| 2026-07-14 | `src/core/types.ts` · `GraphPath` | 新增可选字段 `to_title?`/`to_type?` | 保留可选字段；未升级的调用方/测试不受影响 |
-| 2026-07-14 | `test/traverse-paths-metadata.test.ts` · **新文件** | to_title/to_type 三方向回归 + frontierCap 深度2场景下的广度收敛断言（PGLite） | 新文件保留；语义要点：`frontierCap` 限的是**递归 walk 广度**（深层遍历成本），不限 seed 自身直接出边数——那是 `node_limit` 的职责，测试按此断言 |
-| 2026-07-14 | `src/core/operations.ts` · `graph_overview` · **新 op** | 无根全量概览：返回度数 top-N 页面 + 其间所有边（`GraphNode[]`，与 traverseGraph 同形状）。参数 `node_limit`（默认500/顶2000）/`edge_limit`（默认1500/顶5000，op 层裁边）；源隔离经 `sourceScopeOpts`。已注册进导出数组（`…traverse_graph, graph_overview,`） | 整段 op + 注册行保留；上游同位置加 op 时按逻辑顺序并列；返回形状复用 GraphNode，无需新类型 |
-| 2026-07-14 | `src/core/engine.ts` · `graphOverview` 接口 | `BrainEngine` 新增 `graphOverview(opts?)` 方法签名 | 保留签名；仅 pglite/postgres 两实现类需同步（无其他 implementer） |
-| 2026-07-14 | `src/core/pglite-engine.ts` / `src/core/postgres-engine.ts` · `graphOverview()` · **新方法** | 锁步实现：`deg` CTE（`GROUP BY` 一次算全库度数，非逐页相关子查询）→ `top_nodes`（`deleted_at IS NULL` + 源隔离 + `ORDER BY deg DESC, slug ASC LIMIT`）→ 各 top 节点仅聚合指向**其他 top 节点**的出边（自洽骨架）。`depth` 恒 0 | 两引擎必须锁步；边聚合不需单独源过滤（两端点均约束在已 scoped 的 top_nodes 内）；`engine-parity` DATABASE_URL 门控兜底 |
-| 2026-07-14 | `test/graph-overview.test.ts` · **新文件** | 度数排序 + node_limit + 边只在返回集内 + 软删除排除（PGLite） | 新文件保留 |
+| 日期 | 文件 / 符号位置 | 改动摘要 | 改动原因 | 冲突整合原则 |
+|------|----------------|----------|----------|--------------|
+| 2026-07-09 | `src/commands/serve-http.ts` · `mcpOperations` | 上提 `operations.filter(!localOnly)`，`/mcp` 与 `/admin/api/op` 共用 | Admin cookie 代理与 `/mcp` 共用同一 op 白名单，避免两处 filter 漂移 | 保留上提后的单一来源；上游若改 filter 条件，合并条件后仍共用 |
+| 2026-07-09 | `src/commands/serve-http.ts` · `CUSTOM ADMIN ROUTES` | 新增 `POST /admin/api/op`（cookie `requireAdmin`→`dispatchToolCall`，响应 `{result:ToolResult}`） | Brain SPA 用 cookie 调 MCP op，无需把 Bearer 写进 localStorage | **整块保留** BEGIN/END 标记内代码；上游路由追加后 CUSTOM 块贴末尾 |
+| 2026-07-08~11 | `src/core/inbox.ts` · **新文件** | Inbox 投影/状态：`pageToInboxItem`、`prepareInboxCaptureContent`、`patchInboxFrontmatter` 等 | Brain Inbox 页需要专用投影与 frontmatter 状态机 | 新文件无冲突；直接保留 |
+| 2026-07-08~11 | `src/core/types.ts` · `INBOX_STATUSES` / `INboxItem` / `InboxDetail` | `PageFilters` 之后追加 inbox 类型块 | 前后端/op 共用 inbox 类型契约 | 保留类型块；上游若在相邻位置加类型，顺序上 inbox 块不删 |
+| 2026-07-08~11 | `src/core/migrate.ts` · `inbox_workflow_frontmatter` | 回填存量 `inbox/*` 页的 `inbox_status` / `inbox_legacy_source` | 存量 inbox 页缺状态字段，升级后列表/过滤才能工作 | 保留 migration 条目；**注意 version 序号**不与上游新 migration 撞号，必要时改序号 |
+| 2026-07-08~11 | `src/core/operations.ts` · `list_inbox` / `get_inbox_item` / `trigger_inbox_enrichment` / `discard_inbox_items` | 4 个新 op，插在 `list_pages` 与 `search` 之间 | Admin Inbox 工作流（列表/详情/enrich/丢弃）需要契约化 op | 整段 op 定义保留；上游同位置新增 op 时按逻辑顺序并列，导出数组也要注册 |
+| 2026-07-08~11 | `src/core/operations.ts` · `find_conflicts` / `compile_truth` / `adopt_compiled_truth` | 真理沉淀 3 op + 导出数组注册 | Synthesize 页「找矛盾→编译真理→采纳」工作台需要后端 op | 整段保留；`compile_truth` handler 依赖 `compile-truth.ts`，合并后确认 import 仍在 |
+| 2026-07-08~11 | `src/core/operations.ts` · `list_jobs` / `get_job` handler | 返回前 `.map()` 附加 `execution_lane`（`getExecutionLane(name)`） | Jobs 页要区分 shell/LLM 等执行通道做标签展示 | 保留 `.map()` 追加；上游若改返回形状，在最终返回前加回 `execution_lane` |
+| 2026-07-11 | `src/core/operations.ts` · `query` op | 可选 `trace: boolean`；`trace===true` 时返回 `{results, trace}` | Ask 页检索诊断（瀑布/管道示意）需要可选 trace 载荷 | 保留 `trace` 参数与条件分支；注意 `capturedMeta` 变量名随上游同步 |
+| 2026-07-08~11 | `src/core/conflicts.ts` · **新文件** | `groupConflicts()` union-find 矛盾分组 | `find_conflicts` 需要把相关矛盾簇成组再交给前端 | 新文件无冲突；直接保留 |
+| 2026-07-08~11 | `src/core/compile-truth.ts` · **新文件** | `compileTruth()` LLM 合并提案 + `parseCompileJSON` | `compile_truth` 的 LLM 合并与 JSON 解析实现体 | 新文件无冲突；直接保留 |
+| 2026-07-08~11 | `src/core/minions/execution-lane.ts` · **新文件** | `getExecutionLane(name)` 纯函数 | 从 job name 推导执行通道，供 list/get_job 附加字段 | 新文件无冲突；直接保留 |
+| 2026-07-08~11 | `src/core/minions/handlers/inbox-enrich.ts` · **新文件** | 零 LLM 确定性 enrichment handler | Inbox 批量 enrich 走确定性 pipeline，不烧 token | 新文件无冲突；直接保留 |
+| 2026-07-08~11 | `src/core/minions/handlers/ingest-capture.ts` · handler 体 | `isInboxSlug` 分支 → `prepareInboxCaptureContent`；`importFromContent` 传 `source_kind`/`source_uri` | 捕获入库时识别 inbox slug，写入正确 frontmatter/来源元数据 | 保留 inbox 分支与额外 opts；非 inbox 路径以上游为准 |
+| 2026-07-08~11 | `src/commands/jobs.ts` · `registerBuiltinHandlers` | 追加 `worker.register('inbox_enrich', makeInboxEnrichHandler(engine))` | 让 `inbox_enrich` job 可被 worker 调度执行 | 保留 register 行；不删上游新增 register |
+| 2026-07-11 | `src/commands/status.ts` · `CycleRow` / `toCycleRow()` | 新增 `phases` 字段，从 `result.report.phases` 投影 | Jobs/DreamCycle 卡片要展示各 phase 耗时 | 保留 `phases` 字段投影；上游改 `CycleRow` 时字段并列 |
+| 2026-07-11 | `src/cli.ts` · `case 'search': case 'query':` | `const results = Array.isArray(result) ? result : result?.results` 防御性解包 | `query --trace` 返回 `{results,trace}` 后，CLI 打印不能把对象当数组 | **仅保留这一行解包**；其余格式化逻辑以上游为准 |
+| 2026-07-08~11 | `src/core/eval-shared/json-repair.ts` | `compile-truth.ts` 复用 `stripFences` / `tryParse` / `repairJson`（小改动） | 真理编译复用既有 JSON 修复，避免再造一套解析 | 保留上游 json-repair 逻辑；二开若仅增加 export 使用方，不改修复算法 |
+| 2026-07-08~11 | `src/admin-embedded.ts` | admin `bun run build` 后嵌入的静态资源哈希刷新 | Brain SPA 构建产物需嵌入二进制；随 admin 构建自动刷新 | **不手改**——合并冲突时以 `bun run build:admin` 重新生成为准 |
+| 2026-07-08~11 | `test/inbox-workflow.test.ts` · **新文件** | inbox op + handler 集成测试 | 锁住 Inbox 工作流不回归 | 新文件保留 |
+| 2026-07-08~11 | `test/conflicts.test.ts` · **新文件** | `groupConflicts` 纯函数测试 | 锁住矛盾分组算法 | 新文件保留 |
+| 2026-07-08~11 | `test/compile-truth.test.ts` · **新文件** | `compileTruth` / `parseCompileJSON` 测试 | 锁住真理编译与 JSON 解析 | 新文件保留 |
+| 2026-07-08~11 | `test/ingestion/ingest-capture.test.ts` | inbox slug 捕获路径用例扩展 | 锁住 inbox 捕获分支 | 保留 inbox 用例；上游用例不删 |
+| 2026-07-14 | `src/core/operations.ts` · `traverse_graph` | 新增可选 `node_limit`（默认300，顶2000）/`frontier_cap`（默认200，顶1000，传0禁用）；`node_limit` 接线两引擎（后置稳定切片，因两引擎均已 `ORDER BY depth,slug`）；`frontier_cap` 透传给 `traverseGraph`/`traversePaths` | Graph 页防超大 hub/深 walk 把浏览器或 DB 打爆；默认收紧规模 | 保留两参数与切片逻辑；未传新参数时行为与旧版等价（node_limit 默认 300 会截断超大 hub，属故意的默认收紧——**若下游有依赖大结果集的调用方，需知会**）；上游若改返回形状，切片挪到新返回点 |
+| 2026-07-14 | `src/core/engine.ts` · `traversePaths` 接口签名 | opts 新增可选 `frontierCap?: number`（`TraverseGraphOpts.frontierCap` 本是上游 v0.36+ 已有能力，仅为 `traversePaths` 补齐同款） | `traverse_graph` 的 `frontier_cap` 需能作用到路径遍历 API | 保留该字段；不影响未传该参的既有调用方 |
+| 2026-07-14 | `src/core/pglite-engine.ts` · `traversePaths()` | out/in/both 三分支：①递归项加 `frontierCap`（`ORDER BY p2.slug,p2.id LIMIT`包裹，无设时原样直通）；②最终 SELECT 补 `to_title`/`to_type`（in 方向另 `JOIN pages wp ON wp.id = w.id` 取 walk 节点自身元数据） | Graph 力导向需要目标节点 title/type；路径 walk 需广度护栏 | 保留 wrapRec 包裹与新增列；上游若重写函数体，把这两处改动重新贴回三个分支 |
+| 2026-07-14 | `src/core/postgres-engine.ts` · `traversePaths()` | 同 pglite-engine 语义，用 `sql` 标签模板拼接（`ReturnType<typeof sql>` 做参数类型会退化成 overload 签名报错，改成内联三元 `capped ? sql\`(${step} ORDER BY … LIMIT ${cap})\` : step`） | 与 pglite 锁步，保证两引擎 Graph 行为一致 | 保留三处内联写法；两引擎必须锁步改动（`test/e2e/engine-parity.test.ts` DATABASE_URL 门控兜底，本地默认 skip） |
+| 2026-07-14 | `src/core/types.ts` · `GraphPath` | 新增可选字段 `to_title?`/`to_type?` | 前端画边/节点标签需要路径目标元数据，避免再逐条 get_page | 保留可选字段；未升级的调用方/测试不受影响 |
+| 2026-07-14 | `test/traverse-paths-metadata.test.ts` · **新文件** | to_title/to_type 三方向回归 + frontierCap 深度2场景下的广度收敛断言（PGLite） | 锁住路径元数据与 frontier 广度语义 | 新文件保留；语义要点：`frontierCap` 限的是**递归 walk 广度**（深层遍历成本），不限 seed 自身直接出边数——那是 `node_limit` 的职责，测试按此断言 |
+| 2026-07-14 | `src/core/operations.ts` · `graph_overview` · **新 op** | 无根全量概览：返回度数 top-N 页面 + 其间所有边（`GraphNode[]`，与 traverseGraph 同形状）。参数 `node_limit`（默认500/顶2000）/`edge_limit`（默认1500/顶5000，op 层裁边）；源隔离经 `sourceScopeOpts`。已注册进导出数组（`…traverse_graph, graph_overview,`） | Graph 页默认需要「无根骨架」总览，不能只靠有根 traverse | 整段 op + 注册行保留；上游同位置加 op 时按逻辑顺序并列；返回形状复用 GraphNode，无需新类型 |
+| 2026-07-14 | `src/core/engine.ts` · `graphOverview` 接口 | `BrainEngine` 新增 `graphOverview(opts?)` 方法签名 | 契约层声明 `graph_overview` 的引擎方法 | 保留签名；仅 pglite/postgres 两实现类需同步（无其他 implementer） |
+| 2026-07-14 | `src/core/pglite-engine.ts` / `src/core/postgres-engine.ts` · `graphOverview()` · **新方法** | 锁步实现：`deg` CTE（`GROUP BY` 一次算全库度数，非逐页相关子查询）→ `top_nodes`（`deleted_at IS NULL` + 源隔离 + `ORDER BY deg DESC, slug ASC LIMIT`）→ 各 top 节点仅聚合指向**其他 top 节点**的出边（自洽骨架）。`depth` 恒 0 | 高效算出度数 top-N 自洽子图，供 Graph 默认渲染 | 两引擎必须锁步；边聚合不需单独源过滤（两端点均约束在已 scoped 的 top_nodes 内）；`engine-parity` DATABASE_URL 门控兜底 |
+| 2026-07-14 | `test/graph-overview.test.ts` · **新文件** | 度数排序 + node_limit + 边只在返回集内 + 软删除排除（PGLite） | 锁住 graph_overview 排序/裁剪/软删语义 | 新文件保留 |
 
 #### C. 根目录脚本（非 `src/` 但影响上游构建链）
 
-| 日期 | 文件 / 符号位置 | 改动摘要 | 冲突整合原则 |
-|------|----------------|----------|--------------|
-| 2025-06-25 | `package.json` · `postinstall` | bash 内联 → `bun run scripts/postinstall.ts` | 保留 ts 脚本引用；上游 postinstall 追加时两步都跑或合并为 ts |
-| 2025-06-25 | `scripts/postinstall.ts` · **新文件** | 跨平台 postinstall（Windows 兼容） | 新文件保留；上游若改 postinstall 逻辑，迁入 ts 脚本 |
+| 日期 | 文件 / 符号位置 | 改动摘要 | 改动原因 | 冲突整合原则 |
+|------|----------------|----------|----------|--------------|
+| 2025-06-25 | `package.json` · `postinstall` | bash 内联 → `bun run scripts/postinstall.ts` | Windows 无 bash，内联 shell 在本机安装失败 | 保留 ts 脚本引用；上游 postinstall 追加时两步都跑或合并为 ts |
+| 2025-06-25 | `scripts/postinstall.ts` · **新文件** | 跨平台 postinstall（Windows 兼容） | 用 Bun/TS 实现跨平台 postinstall，替代 bash | 新文件保留；上游若改 postinstall 逻辑，迁入 ts 脚本 |
 
 ---
 

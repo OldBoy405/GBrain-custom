@@ -294,7 +294,9 @@ describe('Inbox deterministic workflow', () => {
     await put('inbox/legacy', '# Legacy');
     await engine.setConfig('version', '122');
     const result = await runMigrations(engine);
-    expect(result.current).toBe(123);
+    // inbox_workflow_frontmatter was renumbered 123 → 124 on the upstream merge
+    // that landed `configurable_fts_language` at 123.
+    expect(result.current).toBe(124);
     const page = await engine.getPage('inbox/legacy', { sourceId: 'default' });
     expect(page?.frontmatter.raw_content).toBe('# Legacy');
     expect(page?.frontmatter.inbox_status).toBe('pending_frontmatter');
