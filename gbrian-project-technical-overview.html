@@ -1,0 +1,1406 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GBrain 项目全面技术讲解 · Technical Overview</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root{
+    --bg:#f7f8fb; --panel:#ffffff; --panel-2:#f0f3f8; --ink:#1e2430; --ink-soft:#4a5568;
+    --muted:#6b7688; --line:#e2e7f0; --line-strong:#cbd4e2;
+    --accent:#3b6df5; --accent-soft:#e8f0ff; --accent-ink:#264ba8;
+    --green:#159c6a; --green-soft:#e3f7ee; --amber:#c9820a; --amber-soft:#fdf3e0;
+    --red:#d64550; --red-soft:#fdeaec; --purple:#7a52d6; --purple-soft:#f0eaff;
+    --teal:#0d8f9e; --teal-soft:#e0f5f7;
+    --code-bg:#1e2430; --code-ink:#e6ebf5;
+    --radius:12px; --shadow:0 1px 3px rgba(20,30,50,.06),0 8px 28px rgba(20,30,50,.06);
+    --mono:'JetBrains Mono',ui-monospace,'SFMono-Regular',Consolas,monospace;
+    --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       font-size:15px;line-height:1.72;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{font-family:var(--mono);font-size:.86em;background:var(--panel-2);
+       padding:.1em .4em;border-radius:5px;color:var(--accent-ink);border:1px solid var(--line)}
+  pre{margin:0}
+  pre code{display:block;background:var(--code-bg);color:var(--code-ink);border:none;
+       padding:18px 20px;border-radius:10px;overflow-x:auto;line-height:1.6;font-size:13px}
+
+  /* ---------- Layout ---------- */
+  .shell{display:flex;max-width:1500px;margin:0 auto;gap:0}
+  .toc{position:sticky;top:0;height:100vh;width:296px;flex:0 0 296px;overflow-y:auto;
+       padding:26px 18px 60px;border-right:1px solid var(--line);background:var(--panel)}
+  .toc h2{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
+       margin:22px 10px 8px}
+  .toc .brand{display:flex;align-items:center;gap:11px;padding:4px 10px 14px}
+  .toc .brand .logo{width:38px;height:38px;flex:0 0 38px}
+  .toc .brand b{font-size:17px;letter-spacing:-.01em}
+  .toc .brand span{display:block;font-size:11px;color:var(--muted);font-family:var(--mono)}
+  .toc ol{list-style:none;margin:0;padding:0;counter-reset:sec}
+  .toc ol li a{display:flex;gap:9px;align-items:baseline;padding:6px 11px;border-radius:8px;
+       color:var(--ink-soft);font-size:13.5px;line-height:1.35}
+  .toc ol li a:hover{background:var(--accent-soft);text-decoration:none;color:var(--accent-ink)}
+  .toc ol li a .n{font-family:var(--mono);font-size:11px;color:var(--accent);flex:0 0 20px}
+  .main{flex:1 1 auto;min-width:0;padding:0 clamp(20px,4vw,64px) 120px}
+
+  /* ---------- Hero ---------- */
+  .hero{padding:64px 0 40px;border-bottom:1px solid var(--line);margin-bottom:8px}
+  .hero .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.16em;
+       text-transform:uppercase;color:var(--accent)}
+  .hero h1{font-size:clamp(30px,5vw,46px);line-height:1.1;margin:14px 0 8px;letter-spacing:-.02em}
+  .hero .sub{font-size:18px;color:var(--ink-soft);max-width:760px}
+  .hero .meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px}
+  .chip{display:inline-flex;align-items:center;gap:7px;background:var(--panel);
+       border:1px solid var(--line-strong);border-radius:999px;padding:6px 14px;font-size:13px;
+       font-family:var(--mono);color:var(--ink-soft);box-shadow:var(--shadow)}
+  .chip b{color:var(--accent-ink)}
+  .statgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:30px 0 4px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+       padding:16px 18px;box-shadow:var(--shadow)}
+  .stat .v{font-size:26px;font-weight:700;font-family:var(--mono);color:var(--accent-ink);letter-spacing:-.02em}
+  .stat .l{font-size:12.5px;color:var(--muted);margin-top:2px}
+
+  /* ---------- Sections ---------- */
+  section{padding:46px 0 8px;border-bottom:1px solid var(--line);scroll-margin-top:12px}
+  section>h2.sh{font-size:27px;letter-spacing:-.02em;margin:0 0 4px;display:flex;align-items:baseline;gap:14px}
+  section>h2.sh .num{font-family:var(--mono);font-size:15px;color:#fff;background:var(--accent);
+       border-radius:8px;padding:3px 10px;flex:0 0 auto;letter-spacing:0}
+  section>.lead{color:var(--ink-soft);font-size:16px;max-width:860px;margin:6px 0 24px}
+  h3{font-size:19px;margin:34px 0 10px;letter-spacing:-.01em;padding-left:12px;border-left:3px solid var(--accent)}
+  h4{font-size:15.5px;margin:22px 0 8px;color:var(--accent-ink)}
+  p{margin:12px 0}
+  ul,ol{margin:12px 0;padding-left:24px}
+  li{margin:5px 0}
+  strong{color:var(--ink);font-weight:650}
+
+  /* ---------- Cards / callouts ---------- */
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+       padding:20px 24px;box-shadow:var(--shadow);margin:20px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  @media(max-width:900px){.grid2,.grid3{grid-template-columns:1fr}}
+  .note{border-left:4px solid var(--accent);background:var(--accent-soft);padding:12px 18px;
+       border-radius:0 10px 10px 0;margin:18px 0}
+  .note.g{border-color:var(--green);background:var(--green-soft)}
+  .note.a{border-color:var(--amber);background:var(--amber-soft)}
+  .note.r{border-color:var(--red);background:var(--red-soft)}
+  .note.p{border-color:var(--purple);background:var(--purple-soft)}
+  .note .t{font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px}
+  .note.a .t{color:var(--amber)} .note.g .t{color:var(--green)} .note.r .t{color:var(--red)}
+  .note.p .t{color:var(--purple)} .note .t{color:var(--accent-ink)}
+
+  /* ---------- Figures / diagrams ---------- */
+  figure{margin:24px 0;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+       padding:22px 20px 8px;box-shadow:var(--shadow)}
+  figure .mermaid{display:flex;justify-content:center;overflow-x:auto}
+  figure figcaption{font-size:12.5px;color:var(--muted);text-align:center;margin-top:10px;
+       padding-top:10px;border-top:1px dashed var(--line);font-family:var(--mono)}
+  .svgwrap{width:100%;overflow-x:auto}
+
+  /* ---------- Tables ---------- */
+  .tablewrap{overflow-x:auto;margin:18px 0;border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  table{border-collapse:collapse;width:100%;font-size:13.5px;background:var(--panel)}
+  th,td{text-align:left;padding:9px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:var(--panel-2);font-weight:650;color:var(--ink);position:sticky;top:0;font-size:12.5px;
+     letter-spacing:.02em;white-space:nowrap}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:var(--accent-soft)}
+  td code{white-space:nowrap}
+  .sc{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:700;
+      padding:2px 8px;border-radius:6px;letter-spacing:.03em}
+  .sc.r{background:var(--teal-soft);color:var(--teal)}
+  .sc.w{background:var(--amber-soft);color:var(--amber)}
+  .sc.a{background:var(--red-soft);color:var(--red)}
+  .sc.ag{background:var(--purple-soft);color:var(--purple)}
+  .sc.sa{background:var(--accent-soft);color:var(--accent-ink)}
+  .lo{display:inline-block;font-family:var(--mono);font-size:10px;font-weight:700;color:#fff;
+      background:var(--ink);border-radius:5px;padding:1px 6px}
+
+  .pill{display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 9px;border-radius:999px;
+      background:var(--panel-2);border:1px solid var(--line);color:var(--ink-soft);margin:2px 3px 2px 0}
+  .kbd{font-family:var(--mono);font-size:12px;background:var(--panel);border:1px solid var(--line-strong);
+      border-bottom-width:2px;border-radius:6px;padding:1px 7px}
+  hr{border:none;border-top:1px solid var(--line);margin:26px 0}
+  .footer{padding:40px 0 10px;color:var(--muted);font-size:13px}
+  .footer code{font-size:11px}
+  .toggle{cursor:pointer;user-select:none;color:var(--accent);font-size:13px;font-family:var(--mono)}
+  details{margin:14px 0;border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:0 16px}
+  details[open]{padding-bottom:12px}
+  summary{cursor:pointer;padding:12px 0;font-weight:650;color:var(--accent-ink)}
+  .anchor{color:var(--line-strong);font-size:.7em;margin-left:8px;opacity:0;transition:.15s}
+  h3:hover .anchor,section>h2.sh:hover .anchor{opacity:1}
+  @media(max-width:1080px){.toc{display:none}.main{padding:0 20px 80px}}
+</style>
+</head>
+<body>
+<div class="shell">
+<!-- ================= SIDEBAR TOC ================= -->
+<nav class="toc">
+  <div class="brand">
+    <svg class="logo" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="40" height="40" rx="10" fill="#3b6df5"/>
+      <circle cx="13" cy="14" r="3.2" fill="#fff"/><circle cx="27" cy="12" r="2.6" fill="#bcd2ff"/>
+      <circle cx="20" cy="24" r="3.6" fill="#fff"/><circle cx="29" cy="27" r="2.4" fill="#bcd2ff"/>
+      <circle cx="11" cy="28" r="2.4" fill="#bcd2ff"/>
+      <path d="M13 14 L20 24 M27 12 L20 24 M20 24 L29 27 M20 24 L11 28" stroke="#fff" stroke-width="1.4" opacity=".7"/>
+    </svg>
+    <div><b>GBrain</b><span>v0.42.62.0 · tech overview</span></div>
+  </div>
+  <h2>目录 Contents</h2>
+  <ol>
+    <li><a href="#s1"><span class="n">01</span>整体架构分析</a></li>
+    <li><a href="#s2"><span class="n">02</span>设计理念与思想</a></li>
+    <li><a href="#s3"><span class="n">03</span>核心功能特性</a></li>
+    <li><a href="#s4"><span class="n">04</span>核心概念体系</a></li>
+    <li><a href="#s5"><span class="n">05</span>搜索与检索机制</a></li>
+    <li><a href="#s6"><span class="n">06</span>MCP 集成架构</a></li>
+    <li><a href="#s7"><span class="n">07</span>知识图谱功能</a></li>
+    <li><a href="#s8"><span class="n">08</span>技能系统</a></li>
+    <li><a href="#s9"><span class="n">09</span>数据库设计</a></li>
+    <li><a href="#s10"><span class="n">10</span>集成与扩展</a></li>
+    <li><a href="#s11"><span class="n">11</span>API 参考文档</a></li>
+  </ol>
+  <h2>附录</h2>
+  <ol>
+    <li><a href="#dreamcycle"><span class="n">↻</span>Dream Cycle 守护进程</a></li>
+    <li><a href="#glossary"><span class="n">☰</span>术语与文件索引</a></li>
+  </ol>
+</nav>
+
+<!-- ================= MAIN ================= -->
+<main class="main">
+
+<!-- HERO -->
+<header class="hero">
+  <div class="eyebrow">Personal Knowledge Brain · Contract-First · Hybrid RAG</div>
+  <h1>GBrain 全面技术讲解</h1>
+  <p class="sub">一个为 AI Agent 而生的「个人 / 公司知识大脑」：向量 + 关键词 + 关系的混合检索、自织的类型化知识图谱、24×7 自我增强的 Dream Cycle 守护进程，以及双存储引擎（PGLite / Postgres）之上的契约优先（contract-first）操作层。</p>
+  <div class="meta">
+    <span class="chip">版本 <b>v0.42.62.0</b></span>
+    <span class="chip">运行时 <b>Bun + TypeScript</b></span>
+    <span class="chip">前端 <b>Vite 6 + React 19</b></span>
+    <span class="chip">引擎 <b>PGLite / Postgres + pgvector</b></span>
+    <span class="chip">契约操作 <b>113 ops</b></span>
+    <span class="chip">Schema 迁移 <b>v124</b></span>
+  </div>
+  <div class="statgrid">
+    <div class="stat"><div class="v">113</div><div class="l">契约化 Operations（CLI+MCP 单源生成）</div></div>
+    <div class="stat"><div class="v">~44+</div><div class="l">数据库表（baseline + migrations）</div></div>
+    <div class="stat"><div class="v">18</div><div class="l">AI Provider recipes</div></div>
+    <div class="stat"><div class="v">~48</div><div class="l">Skills 技能（fat markdown）</div></div>
+    <div class="stat"><div class="v">RRF k=60</div><div class="l">混合检索融合常数</div></div>
+    <div class="stat"><div class="v">4 arms</div><div class="l">召回臂：向量·关键词·关系·图</div></div>
+  </div>
+  <div class="note p" style="margin-top:26px">
+    <div class="t">阅读说明</div>
+    本报告面向开发者，覆盖 11 个核心模块 + 2 个附录。每个技术点均配有 Mermaid 图或 SVG 示意图。图表在浏览器打开时由 <code>mermaid@11</code> CDN 渲染；若离线阅读，图表源码仍以文本形式可读。本文基于当前仓库源码（<code>src/core/operations.ts</code>、<code>src/core/search/</code>、<code>admin/</code> 等）逐一核对，并标注了关键文件与行号以便溯源。
+  </div>
+</header>
+
+<!-- ============================================================= -->
+<!-- SECTION 1 — ARCHITECTURE -->
+<!-- ============================================================= -->
+<section id="s1">
+  <h2 class="sh"><span class="num">01</span>整体架构分析</h2>
+  <p class="lead">GBrain 是一个「契约优先（contract-first）」的分层系统：一份共享的 Operations 契约同时生成 CLI 与 MCP 两套表层；下方是可插拔的双存储引擎；旁挂一个可嵌入二进制的 React 管理前端。所有组件围绕一个不可变的核心不变量集合协作。</p>
+
+  <h3>1.1 分层总览 <span class="anchor">#</span></h3>
+  <p>系统自上而下分为五层：<strong>接入层</strong>（Agent / 终端 / 浏览器）、<strong>表层</strong>（CLI、stdio MCP、HTTP MCP、Admin SPA）、<strong>契约层</strong>（<code>operations.ts</code> — 单一事实来源）、<strong>核心服务层</strong>（检索、图谱、Minions 任务队列、Dream Cycle、AI 网关）、<strong>存储层</strong>（BrainEngine 抽象之下的 PGLite 或 Postgres+pgvector）。</p>
+
+  <figure>
+    <div class="mermaid">
+flowchart TB
+  subgraph ACCESS["接入层 Clients"]
+    A1["AI Agent<br/>Claude Code / Codex / OpenClaw"]
+    A2["终端用户<br/>TTY / CLI"]
+    A3["浏览器<br/>Admin SPA"]
+  end
+  subgraph SURFACE["表层 Surfaces (generated)"]
+    S1["CLI<br/>src/cli.ts"]
+    S2["stdio MCP<br/>src/mcp/server.ts"]
+    S3["HTTP MCP<br/>serve-http.ts (OAuth2.1)"]
+    S4["Legacy Bearer HTTP<br/>http-transport.ts"]
+  end
+  CONTRACT["契约层 · operations.ts<br/>113 Operations · scope · localOnly · params<br/><b>单一事实来源</b>"]
+  subgraph CORE["核心服务 Core Services"]
+    C1["混合检索<br/>search/*"]
+    C2["知识图谱<br/>link-extraction / graph"]
+    C3["Minions 任务队列<br/>minions/*"]
+    C4["Dream Cycle<br/>cycle/*"]
+    C5["AI 网关<br/>ai/* · 18 recipes"]
+  end
+  ENGINE["BrainEngine 接口<br/>engine.ts"]
+  subgraph STORE["存储层 Storage"]
+    D1[("PGLite<br/>嵌入式 WASM PG")]
+    D2[("Postgres + pgvector<br/>Supabase / 自托管")]
+  end
+
+  A1 --> S2 & S3 & S4
+  A2 --> S1
+  A3 --> S3
+  S1 & S2 & S3 & S4 --> CONTRACT
+  CONTRACT --> C1 & C2 & C3 & C4
+  C1 & C2 & C3 & C4 --> C5
+  CONTRACT --> ENGINE
+  C1 & C2 & C3 & C4 --> ENGINE
+  ENGINE --> D1 & D2
+    </div>
+    <figcaption>图 1.1 — GBrain 五层架构：一份契约 → 多套表层 → 核心服务 → 引擎抽象 → 双存储</figcaption>
+  </figure>
+
+  <h3>1.2 Contract-First 设计模式 <span class="anchor">#</span></h3>
+  <p>整个系统最核心的架构决策是：<strong>CLI 与所有 MCP 传输都不是手写的，而是从 <code>src/core/operations.ts</code> 导出的 <code>operations: Operation[]</code> 数组「运行时迭代」生成的</strong>——没有代码生成步骤，只有对同一数组的遍历。这消除了「加了一个 CLI 命令却忘了加 MCP 工具」这类漂移。</p>
+  <p>每个 <code>Operation</code> 是一条自描述记录：</p>
+  <pre><code>export interface Operation {
+  name: string;
+  description: string;
+  params: Record&lt;string, ParamDef&gt;;        // 类型化参数 schema
+  handler: (ctx, params) =&gt; Promise&lt;unknown&gt;;
+  mutating?: boolean;
+  scope?: 'read'|'write'|'admin'|'sources_admin'|'users_admin';  // 远程鉴权
+  localOnly?: boolean;                       // 永不暴露给远程传输
+  cliHints?: { name?; aliases?; positional?; stdin?; hidden? };  // CLI 生成提示
+}</code></pre>
+  <ul>
+    <li><strong>CLI 生成</strong>（<code>src/cli.ts</code>）：构建 <code>cliOps: Map&lt;string,Operation&gt;</code>，以 <code>cliHints.name</code> 为键；<code>positional</code> 映射位置参数、<code>stdin</code> 读取管道输入。</li>
+    <li><strong>MCP 工具生成</strong>（<code>src/mcp/tool-defs.ts</code>）：<code>buildToolDefs(operations)</code> 用同一个 <code>paramDefToSchema()</code> 把 <code>ParamDef</code> 递归映射为 JSON Schema。三处调用点（stdio、HTTP tools/list、subagent 工具注册）共享此 mapper，因为它们曾经漂移过。</li>
+    <li><strong>统一分发</strong>（<code>src/mcp/dispatch.ts</code>）：<code>dispatchToolCall()</code> 是所有传输的唯一漏斗——解析 op → <code>validateParams</code> → 构建 <code>OperationContext</code> → 调 <code>handler</code> → 序列化为 MCP 信封。它的存在就是为了防止 stdio / HTTP 漂移。</li>
+  </ul>
+
+  <figure>
+    <div class="mermaid">
+flowchart LR
+  OPS["operations.ts<br/>Operation[]"]:::src
+  OPS -->|"cliHints.name / positional / stdin"| CLI["CLI verbs<br/>gbrain get / put / query ..."]
+  OPS -->|"params → buildToolDefs → JSON Schema"| TOOLS["MCP tools/list"]
+  CLI -->|"ctx.remote=false"| DISP["dispatch.ts<br/>validateParams → handler"]
+  TOOLS -->|"ctx.remote=true"| DISP
+  DISP --> HANDLER["op.handler(ctx, params)"]
+  HANDLER --> ENG["BrainEngine"]
+  classDef src fill:#e8f0ff,stroke:#3b6df5,stroke-width:2px;
+    </div>
+    <figcaption>图 1.2 — 一份契约数组同时喂养 CLI verbs 与 MCP tools，经统一 dispatch 落到 handler</figcaption>
+  </figure>
+
+  <h3>1.3 组件依赖关系 <span class="anchor">#</span></h3>
+  <p>下图展示 <code>src/</code> 主要模块间的依赖方向。注意 <code>operations.ts</code> 处于中枢：表层依赖它，它依赖 <code>engine.ts</code> 抽象与核心服务；引擎工厂通过<strong>动态 import</strong> 保证 PGLite 的 WASM 永不为 Postgres 用户加载（反之亦然）。</p>
+  <figure>
+    <div class="mermaid">
+flowchart TB
+  cli["cli.ts"] --> ops["core/operations.ts"]
+  mcpserver["mcp/server.ts"] --> tooldefs["mcp/tool-defs.ts"] --> ops
+  mcpserver --> dispatch["mcp/dispatch.ts"] --> ops
+  servehttp["commands/serve-http.ts"] --> dispatch
+  servehttp --> oauth["core/oauth-provider.ts"]
+  servehttp --> admin["admin-embedded.ts<br/>(embedded React SPA)"]
+  ops --> engine["core/engine.ts (interface)"]
+  ops --> search["core/search/*"]
+  ops --> links["core/link-extraction.ts"]
+  ops --> minions["core/minions/*"]
+  search --> engine
+  links --> engine
+  minions --> engine
+  cycle["core/cycle/*"] --> minions
+  cycle --> engine
+  engine --> factory["core/engine-factory.ts"]
+  factory -.dynamic import.-> pglite["core/pglite-engine.ts"]
+  factory -.dynamic import.-> pg["core/postgres-engine.ts"]
+  search --> gateway["core/ai/gateway.ts"] --> recipes["ai/recipes/* (18)"]
+    </div>
+    <figcaption>图 1.3 — 模块依赖图：operations.ts 为中枢，engine-factory 动态选择引擎实现</figcaption>
+  </figure>
+
+  <h3>1.4 前端架构（Vite + React） <span class="anchor">#</span></h3>
+  <p><code>admin/</code> 是一个 <strong>Vite 6 + React 19 + TypeScript</strong> SPA，刻意与上游隔离（<code>admin/tsconfig.json</code> 只 <code>include: ['src']</code>，无法 import <code>../../src/core/*</code>）。它<strong>不使用 Router 库</strong>，而是基于 <code>hashchange</code> 的路由。前端呈现<strong>双表层</strong>：暗色的运维「驾驶舱」（Ops）与浅色的知识阅读界面（Brain）。构建产物 <code>admin/dist/</code> 通过 <code>src/admin-embedded.ts</code> 以 <code>import ... with { type:'file' }</code> 嵌入二进制，使 <code>gbrain serve --http</code>（默认端口 <span class="kbd">3131</span>）能在编译后的单文件二进制里服务 <code>/admin</code>。详见 <a href="#s6">§6 MCP 集成</a> 与 <a href="#s3">§3 核心功能</a>。</p>
+
+  <div class="note">
+    <div class="t">五条跨切面不变量（must-never-violate）</div>
+    <ul style="margin:6px 0 0">
+      <li><strong>信任 fail-closed</strong>：<code>OperationContext.remote</code> 必填；非严格 <code>false</code> 即视为远程/不可信。</li>
+      <li><strong>Source 隔离</strong>：所有读侧 op 经 <code>sourceScopeOpts(ctx)</code>，杜绝跨源数据泄露。</li>
+      <li><strong>JSONB 铁律</strong>：永不 <code>JSON.stringify</code> 进 <code>::jsonb</code>（postgres.js 会双重编码；PGLite 掩盖此 bug）。</li>
+      <li><strong>引擎对等（parity）</strong>：新方法/SQL 形状必须同时落到两个引擎，由 <code>engine-parity.test.ts</code> 钉死。</li>
+      <li><strong>契约优先</strong>：<code>operations.ts</code> 单源，CLI+MCP 生成；每个 op 携带 scope + 可选 localOnly。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================================================= -->
+<!-- SECTION 2 — PHILOSOPHY -->
+<!-- ============================================================= -->
+<section id="s2">
+  <h2 class="sh"><span class="num">02</span>设计理念与思想</h2>
+  <p class="lead">GBrain 的一句话哲学：<strong>「搜索给你原始页面，GBrain 给你答案。」</strong> 它要成为「记忆领域的下一个 Postgres」——最经得起测试、覆盖面最广、以最低成本服务最多人的检索 + Agent 记忆系统。</p>
+
+  <h3>2.1 北极星（North Star） <span class="anchor">#</span></h3>
+  <div class="grid2">
+    <div class="card">
+      <h4>搜索 vs 大脑</h4>
+      <p>多数个人知识系统给你「10 个提到关键词的 chunk」。GBrain 额外提供两样别人不同时具备的东西：</p>
+      <ul>
+        <li><strong>合成层</strong>：跨人物/公司/交易/想法的、带引用的合成散文，并显式标注「大脑还不知道什么」（gap analysis）。</li>
+        <li><strong>自织知识图谱</strong>：每次页面写入都以<strong>零 LLM 调用</strong>抽取实体引用、创建类型化边（<code>works_at</code>、<code>invested_in</code>、<code>founded</code>、<code>advises</code>、<code>attended</code>）。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Benchmark（BrainBench）</h4>
+      <p>在 240 页 Opus 生成的富文本语料上：<strong>P@5 49.1%、R@5 97.9%</strong>；相比其「图谱关闭」变体 <strong>+31.4 分 P@5</strong>，相对 ripgrep-BM25 + 纯向量 RAG 也有相近幅度领先。「gbrain 最好」是一个<strong>整系统</strong>命题——由完整 BrainBench 套件证明，而非任一单点特性。</p>
+    </div>
+  </div>
+
+  <h3>2.2 「守护进程 &gt; 聊天」的思想 <span class="anchor">#</span></h3>
+  <p>作者的核心洞察：<em>「让一个 24/7 运行的守护进程去入库、增强、整合，比让一个 Agent 在聊天里持续苦干更容易。」</em> GBrain 就是这个被泛化的守护进程——夜间自动摄取会议、邮件、推文、语音、原创想法；增强遇到的每个人和公司；修复自己的引用；整合记忆。护城河是那个 10 万页的大脑；<strong>大脑层</strong>让护城河可用；<strong>Dream Cycle</strong>让它保持锋利（见 <a href="#dreamcycle">附录 · Dream Cycle</a>）。</p>
+
+  <h3>2.3 实体-状态设计法（四问设计法） <span class="anchor">#</span></h3>
+  <p>本 fork 内置了一套贯穿的方法论（<code>.qoder/skills/entity-state-design/</code>）：<strong>系统存在的本质目的是跨越时间与空间传递信息；所有数据归根结底是在记录「某实体在某时刻的状态快照」。</strong> 设计时不从「用户要什么功能」出发，而从「我要管理哪些实体、它们的哪些状态需要通过什么流程传递给谁」出发。功能只是状态变更的实现手段。</p>
+
+  <figure>
+    <div class="mermaid">
+flowchart LR
+  Q0["① 信息流扫描<br/>谁→谁，找断头路"] --> Q1["② 实体是什么<br/>名词→核心实体"]
+  Q1 --> Q2["③ 有多少状态<br/>业务状态枚举"]
+  Q2 --> Q3["④ 什么流程更新<br/>stateDiagram-v2"]
+  Q3 --> Q4["⑤ 功能如何实现<br/>每条边=1接口"]
+  Q4 --> Q5["⑥ 设计验证<br/>无死状态/黑洞状态"]
+  Q5 -.发现遗漏.-> Q1
+    </div>
+    <figcaption>图 2.1 — 四问设计法工作流：从信息流到状态机再反推功能，闭环自检</figcaption>
+  </figure>
+  <p>该方法与 GBrain 自身设计高度自洽：<code>pages</code> 是核心实体，<code>deleted_at</code>/<code>generation</code>/<code>links_extracted_at</code> 是其状态；<code>minion_jobs.status</code> 是一台严格的状态机（见 <a href="#s3">§3.3</a>）；<code>facts</code>/<code>ontology</code> 用双时序（bi-temporal）字段记录状态随时间的迁移与 supersession。</p>
+
+  <h3>2.4 设计系统与「声音」 <span class="anchor">#</span></h3>
+  <p>面向用户的文案有明确「声音」规范（<code>DESIGN.md</code>）：<em>「像一个了解你过去的聪明朋友，而不是临床评分系统。」</em> 第二人称、允许缩写、用可验证的具体数据（「3 个里漏了 2 个」优于「Brier 0.31」）、不说教、25 词以内。五个面（<code>pattern_statement</code>、<code>nudge</code>、<code>forecast_blurb</code>、<code>dashboard_caption</code>、<code>morning_pulse</code>）均经 <code>gateVoice()</code> 用 Haiku 裁判过滤学术腔，最多 2 次重生，再回退到手写模板。</p>
+</section>
+
+<!-- ============================================================= -->
+<!-- SECTION 3 — CORE FEATURES -->
+<!-- ============================================================= -->
+<section id="s3">
+  <h2 class="sh"><span class="num">03</span>核心功能特性</h2>
+  <p class="lead">四大核心功能：内容入库（ingest / Inbox）、知识检索（query / think）、Minions 任务队列、实时监控。它们由契约层暴露，由核心服务实现，并被 Dream Cycle 编排为夜间自治流程。</p>
+
+  <h3>3.1 内容入库（Ingest / Inbox 工作流） <span class="anchor">#</span></h3>
+  <p>写入路径 <code>put_page</code> 是一个「写后即织」的重型操作：分块（chunk）→ 嵌入（embed）→ 协调标签 → <strong>零 LLM 抽取类型化链接</strong> → 抽取时间线条目。链接抽取是一次完整<strong>协调（reconciliation）</strong>（非追加）：在 slug 哈希的<strong>咨询锁</strong>（<code>pg_advisory_xact_lock</code>）内运行，删除陈旧边、保留 <code>link_source='manual'</code> 的手工边、且所有读写都串上 <code>sourceId</code> 以防跨源幻删。</p>
+  <p>本 fork 额外引入 <strong>Inbox 入库工作流</strong>：<code>inbox/*</code> 页有一套 frontmatter 状态机（<code>pending_frontmatter → pending_typed_link → merging → merged</code>），配 4 个契约 op（<code>list_inbox</code>、<code>get_inbox_item</code>、<code>trigger_inbox_enrichment</code>、<code>discard_inbox_items</code>）与一个<strong>零 LLM 确定性 enrichment handler</strong>（<code>inbox_enrich</code>），批量增强不烧 token。</p>
+
+  <figure>
+    <div class="mermaid">
+flowchart LR
+  IN["原始内容<br/>会议/邮件/推文/想法"] --> CAP["capture / put_page"]
+  CAP --> INBOX{"inbox slug?"}
+  INBOX -->|是| PF["pending_frontmatter"] --> PT["pending_typed_link"] --> MG["merging"] --> MD["merged"]
+  INBOX -->|否| WRITE["写入 pages"]
+  WRITE --> CH["chunk (recursive)"] --> EM["embed 1536d"]
+  WRITE --> LK["零LLM 链接协调<br/>advisory lock"]
+  WRITE --> TL["时间线抽取"]
+  PT -.trigger_inbox_enrichment.-> ENR["inbox_enrich job<br/>确定性 pipeline"]
+    </div>
+    <figcaption>图 3.1 — 入库数据流：普通写入触发织图，Inbox slug 走专用状态机 + 确定性增强</figcaption>
+  </figure>
+
+  <h3>3.2 知识检索（Query / Think） <span class="anchor">#</span></h3>
+  <div class="grid2">
+    <div class="card">
+      <h4><code>search</code> / <code>query</code> — 原始检索</h4>
+      <p><code>search</code> 是纯关键词 FTS；<code>query</code> 是混合检索（向量+关键词+关系+图），带多查询扩展、autocut、adaptive_return。返回排序好的页面/chunk，无 LLM 成本（除非开启扩展）。本 fork 为 <code>query</code> 增加可选 <code>trace:true</code>，返回 <code>{results, trace}</code> 供 Ask 页做检索诊断瀑布图。</p>
+    </div>
+    <div class="card">
+      <h4><code>think</code> — 合成层</h4>
+      <p>多跳合成：拉取相关证据（页面+takes+图），产出带引用的散文答案 + 冲突分析 + gap 分析。这是「大脑 vs 搜索」的分水岭。远程调用者的 <code>--save</code>/<code>--take</code> 被禁用（信任边界）。</p>
+    </div>
+  </div>
+  <p>检索机制的完整内部实现见 <a href="#s5">§5 搜索与检索机制</a>。</p>
+
+  <h3>3.3 Minions 任务队列 <span class="anchor">#</span></h3>
+  <p>Minions 是 GBrain 的后台作业系统，落在 <code>minion_jobs</code> 表（一台严格状态机）。作业按<strong>执行通道（execution lane）</strong>分类（纯函数 <code>getExecutionLane(name)</code>，永不与 <code>worker.register()</code> 漂移）：</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Lane</th><th>触发名</th><th>含义</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pill">shell</span></td><td><code>shell</code></td><td>临时 shell 作业（CLI-only，MCP 拒绝）</td></tr>
+      <tr><td><span class="pill">subagent</span></td><td><code>subagent</code>, <code>subagent_aggregator</code></td><td>LLM 编排的子 Agent 作业</td></tr>
+      <tr><td><span class="pill">handler</span></td><td><code>sync</code>, <code>embed</code>, <code>extract</code>, <code>synthesize</code>, <code>inbox_enrich</code> …</td><td>确定性 handler</td></tr>
+    </tbody>
+  </table></div>
+
+  <p>作业状态机（<code>src/core/minions/queue.ts</code>）：终态为 <code>completed / failed / dead / cancelled</code>；父作业等待子作业时进入 <code>waiting-children</code>；预算耗尽时子树被翻为 <code>dead(budget_exhausted)</code>。</p>
+  <figure>
+    <div class="mermaid">
+stateDiagram-v2
+  [*] --> waiting: submit
+  [*] --> delayed: submit(delay)
+  delayed --> waiting: 到期
+  waiting --> active: worker 认领(claim)
+  active --> completed: 成功
+  active --> failed: 出错(可重试)
+  failed --> waiting: retry_job / 自动退避
+  active --> waiting_children: 派生子作业
+  waiting_children --> active: 子作业全部完成
+  waiting --> paused: pause_job
+  active --> paused: pause_job
+  paused --> waiting: resume_job
+  waiting --> cancelled: cancel_job
+  active --> cancelled: cancel_job
+  failed --> dead: 超出 max_attempts
+  waiting --> dead: budget_exhausted
+  completed --> [*]
+  failed --> [*]
+  dead --> [*]
+  cancelled --> [*]
+    </div>
+    <figcaption>图 3.2 — minion_jobs 状态机：认领、重试退避、父子等待、暂停/恢复、预算熔断</figcaption>
+  </figure>
+  <p>队列具备生产级韧性：租约（rate-leases）、背压审计（backpressure-audit）、静默时段（quiet-hours）、niceness 优先级、锁续约心跳（lock-renewal-tick）、子进程监督（child-worker-supervisor）、幂等键、超时看门狗。任务管理 op 共 11 个（<code>submit_job</code>、<code>get_job</code>、<code>cancel_job</code>、<code>retry_job</code>、<code>pause_job</code>、<code>resume_job</code>、<code>replay_job</code>、<code>send_job_message</code> 等，见 <a href="#s11">§11</a>）。</p>
+
+  <h3>3.4 实时监控 <span class="anchor">#</span></h3>
+  <p>Admin SPA 混用 <strong>SSE + 轮询</strong>（无 WebSocket）。服务端 <code>GET /admin/events</code> 是一个<strong>全局请求活动流</strong>：每条 MCP/admin/webhook 请求经 <code>logMcpRequest</code> 广播一帧 <code>{agent, operation, scopes, latency_ms, status}</code>，每 25s 一次心跳 ping 防代理空闲超时。轮询用于作业队列（Ops JobsWatch 1s；Brain Jobs 3s + 9 路并行 <code>list_jobs</code>）、Inbox 增强进度（1.5s <code>get_job_progress</code>）、Today 统计/健康（30s）。所有轮询在标签页隐藏时暂停，并用请求序号守卫防止陈旧响应覆盖新响应。</p>
+</section>
+
+<!-- ============================================================= -->
+<!-- SECTION 4 — CORE CONCEPTS -->
+<!-- ============================================================= -->
+<section id="s4">
+  <h2 class="sh"><span class="num">04</span>核心概念体系</h2>
+  <p class="lead">理解 GBrain 必须先掌握三组关键概念：Brain/Source 双重路由轴、Trust Boundary（remote/local 信任边界）、以及实体-状态设计方法论。误解前两者会导致查询「静默走错」或数据泄露。</p>
+
+  <h3>4.1 两个正交组织轴：Brain 与 Source <span class="anchor">#</span></h3>
+  <div class="grid2">
+    <div class="card">
+      <h4>Brain — 哪个数据库</h4>
+      <p>你的个人大脑是 <code>host</code>。可通过 <code>gbrain mounts add</code> 挂载额外的大脑（团队发布的，各有独立 DB 与访问策略）。路由：<code>--brain</code> / <code>GBRAIN_BRAIN_ID</code> / <code>.gbrain-mount</code> dotfile。</p>
+    </div>
+    <div class="card">
+      <h4>Source — 数据库里的哪个仓库</h4>
+      <p>一个大脑可含多个 source（wiki、gstack、openclaw、essays）。<strong>slug 唯一性是 <code>(source_id, slug)</code> 而非 slug</strong>。路由：<code>--source</code> / <code>GBRAIN_SOURCE</code> / <code>.gbrain-source</code> dotfile。</p>
+    </div>
+  </div>
+  <p>两轴都遵循同样的 6 级解析模式。误路由是「静默」的——查询不报错，只是返回错误库/错误源的结果，这也是为什么 <code>sourceScopeOpts</code> 被设为单一强制通道。</p>
+  <figure>
+    <div class="mermaid">
+flowchart TB
+  Q["一次查询"] --> BRAIN{"Brain 轴<br/>哪个 DB?"}
+  BRAIN -->|host| HDB[("个人大脑 DB")]
+  BRAIN -->|mounted team| TDB[("团队大脑 DB<br/>独立访问策略")]
+  HDB --> SRC{"Source 轴<br/>哪个仓库?"}
+  TDB --> SRC
+  SRC -->|wiki| S1["source: wiki"]
+  SRC -->|gstack| S2["source: gstack"]
+  SRC -->|essays| S3["source: essays"]
+  S1 & S2 & S3 --> SCOPE["sourceScopeOpts(ctx)<br/>federated[] > scalar > none"]
+    </div>
+    <figcaption>图 4.1 — Brain（选库）× Source（选源）两个正交轴，最终都收敛到 sourceScopeOpts 单一过滤通道</figcaption>
+  </figure>
+
+  <h3>4.2 Trust Boundary：<code>remote</code> vs <code>local</code> <span class="anchor">#</span></h3>
+  <p><code>OperationContext.remote: boolean</code> 是<strong>类型上必填</strong>的——「类型系统是第一道防线」。语义：<code>remote===false</code> 是可信本地拥有者（OS 即信任边界）；<strong>任何不严格等于 <code>false</code> 的值都视为不可信/远程</strong>。防御性代码用 <code>ctx.remote !== false</code>（除非显式 false 否则不信任）来防 cast 绕过。</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>调用者</th><th>设置点</th><th>remote 值</th></tr></thead>
+    <tbody>
+      <tr><td>本地 CLI op 分发</td><td><code>src/cli.ts</code></td><td><span class="sc r">false</span></td></tr>
+      <tr><td><code>gbrain call</code>（可信本地）</td><td><code>mcp/server.ts</code> handleToolCall</td><td><span class="sc r">false</span></td></tr>
+      <tr><td>stdio MCP</td><td><code>mcp/server.ts</code></td><td><span class="sc a">true</span></td></tr>
+      <tr><td>HTTP legacy bearer</td><td><code>mcp/http-transport.ts</code></td><td><span class="sc a">true</span></td></tr>
+      <tr><td>HTTP OAuth <code>/mcp</code></td><td><code>serve-http.ts</code></td><td><span class="sc a">true</span></td></tr>
+      <tr><td>dispatch 默认</td><td><code>dispatch.ts</code></td><td><span class="sc a">opts.remote ?? true</span>（fail-closed）</td></tr>
+    </tbody>
+  </table></div>
+  <p><strong>remote 改变行为的实例</strong>：<code>get_page</code> 在 remote 时剥离整个 <code>takes</code> fence 并只保留 <code>visibility:'world'</code> 的 facts 行；<code>file_upload</code> 收紧文件系统限制（cwd 锁定）；per-call 搜索 <code>mode</code> 覆盖对远程被忽略（防升级到昂贵的 tokenmax）；<code>__all__</code>/<code>all_sources</code> 跨源仅对可信本地开放。</p>
+
+  <h3>4.3 Scope 权限层级 <span class="anchor">#</span></h3>
+  <p>远程鉴权用能力 scope（<code>src/core/scope.ts</code> 单一事实来源，镜像到 admin SPA 并有 CI 漂移检查）：</p>
+  <figure>
+    <div class="mermaid">
+flowchart TB
+  admin["admin"] --> write["write"] --> read["read"]
+  admin --> sa["sources_admin"]
+  admin --> ua["users_admin"]
+  agent["agent<br/>（兄弟 scope，admin 不蕴含）"]
+  style agent stroke-dasharray: 5 5,fill:#f0eaff,stroke:#7a52d6
+    </div>
+    <figcaption>图 4.2 — Scope 蕴含关系：admin⊇{sources_admin,users_admin,write,read}；agent 是独立兄弟，即便超管也需显式绑定才能派子作业</figcaption>
+  </figure>
+
+  <h3>4.4 实体-状态设计方法论 <span class="anchor">#</span></h3>
+  <p>见 <a href="#s2">§2.3</a> 的四问设计法。它在本 fork 中既是「设计新模块时的思维工具」，也是理解 GBrain 数据模型的透镜：把每张表读作「某实体的状态快照 + 其状态迁移的触发流程」。<code>facts</code> 与 <code>ontology</code> 的双时序字段（<code>valid_from / valid_until / expired_at / superseded_by</code>）正是「状态随时间迁移、旧值被新值取代而非覆盖」的直接体现。</p>
+</section>
+
+<!-- ============================================================= -->
+<!-- SECTION 5 — SEARCH -->
+<!-- ============================================================= -->
+<section id="s5">
+  <h2 class="sh"><span class="num">05</span>搜索与检索机制</h2>
+  <p class="lead">混合检索是 GBrain 的技术心脏。入口 <code>hybridSearch(engine, query, opts)</code>（<code>src/core/search/hybrid.ts</code>），管线为：<strong>关键词 + 向量 + 关系（+图）→ RRF 融合 → 归一化 → boost → cosine 重打分 → 去重 → rerank → autocut</strong>。全程 fail-open。</p>
+
+  <h3>5.1 四召回臂与融合流程 <span class="anchor">#</span></h3>
+  <figure>
+    <div class="mermaid">
+flowchart TB
+  QRY["query + opts"] --> MODE["解析 mode + knobs<br/>(在裸 hybridSearch 内)"]
+  MODE --> COL["解析 embedding 列<br/>embedding/voyage/image"]
+  COL --> INTENT["classifyQuery 意图分类<br/>(零 LLM 正则)"]
+  INTENT --> KW["关键词臂<br/>searchKeyword"]
+  INTENT --> REL["关系臂<br/>relational-recall"]
+  INTENT --> EXP["多查询扩展<br/>(tokenmax, Haiku ≤3)"]
+  EXP --> VEC["向量臂<br/>searchVector × 变体"]
+  KW & VEC & REL --> RRF["rrfFusionWeighted<br/>k=60, 每臂 k=60/weight"]
+  RRF --> COS["cosine 重打分<br/>0.7·rrf + 0.3·cosine"]
+  COS --> BOOST["post-fusion boost<br/>backlink/salience/recency/title/graph"]
+  BOOST --> WALK["两跳结构扩展<br/>(可选, code_edges)"]
+  WALK --> DEDUP["去重"]
+  DEDUP --> RERANK["cross-encoder rerank<br/>(balanced/tokenmax)"]
+  RERANK --> AC["autocut 断崖裁剪"]
+  AC --> AR["adaptive_return / slice"]
+  AR --> BUD["token budget"]
+  BUD --> OUT["结果"]
+    </div>
+    <figcaption>图 5.1 — 混合检索完整管线（14 阶段），三个返回路径共享 boost/alias/evidence/budget 尾段</figcaption>
+  </figure>
+  <p><strong>三个返回路径</strong>都共享 post-fusion boost + alias-hop + evidence + budget 尾段：(a) 未配置嵌入 provider；(b) 嵌入/向量失败 → 关键词兜底；(c) 完整混合。在 (a)/(b) 下关系臂仍与关键词经 RRF 融合，使类型化边答案在向量不可用时也能存活。</p>
+
+  <h3>5.2 RRF 融合算法 <span class="anchor">#</span></h3>
+  <p>常数 <code>RRF_K = 60</code>；compiled-truth 加成 <code>COMPILED_TRUTH_BOOST = 2.0</code>。实际走的是<strong>加权变体</strong> <code>rrfFusionWeighted</code>：</p>
+  <pre><code>// score(doc) = Σ_lists 1 / (k_list + rank_in_list)，再 min-max 归一，再 compiled-truth ×2.0
+for (const { list, k } of lists) {
+  for (let rank = 0; rank &lt; list.length; rank++) {
+    const rrfScore = 1 / (k + rank);          // 核心 RRF 项 (rank 从 0 起)
+    existing ? existing.score += rrfScore      // 跨臂累加
+             : scores.set(key, { result, score: rrfScore });
+  }
+}
+const maxScore = Math.max(...entries.map(e =&gt; e.score));
+for (const e of entries) {
+  e.score = e.score / maxScore;               // 归一到 0..1
+  e.score *= (e.result.chunk_source === 'compiled_truth' ? 2.0 : 1.0);
+}</code></pre>
+  <ul>
+    <li>每臂以 <code>{list, k}</code> 进入融合，<code>k = effectiveRrfK(60, weight) = 60/weight</code>——<strong>weight 越高 → k 越低 → 该臂头部贡献越强</strong>（如 keywordWeight 1.20 → k=50）。</li>
+    <li>向量臂：每个扩展查询变体一条 list；关键词臂：一条；关系臂：中性 <code>k=60</code>（竞争但不主导，image 模态排除）。</li>
+    <li><code>rrfKey = ${source_id}:${slug}:${chunk_id}</code>，含 source_id 使跨源同 slug 页面不塌陷。</li>
+    <li><strong>图信号不是融合臂</strong>，而是 post-fusion 乘性 boost（邻接 hub 1.05 / 跨源 hub 1.10 / session 降权 0.95）。</li>
+  </ul>
+
+  <h3>5.3 三种搜索模式 <span class="anchor">#</span></h3>
+  <p><code>MODE_BUNDLES</code>（<code>Object.freeze</code>，<code>src/core/search/mode.ts</code>）；默认 <code>balanced</code>。核心 knob：</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Knob</th><th>conservative</th><th>balanced ★默认</th><th>tokenmax</th></tr></thead>
+    <tbody>
+      <tr><td><code>tokenBudget</code></td><td>4000</td><td>12000</td><td>off（undefined）</td></tr>
+      <tr><td><code>expansion</code>（LLM 多查询）</td><td>false</td><td>false</td><td><b>true</b></td></tr>
+      <tr><td><code>relationalRetrieval</code></td><td>false</td><td><b>true</b></td><td><b>true</b></td></tr>
+      <tr><td><code>reranker_enabled</code></td><td>false</td><td><b>true</b></td><td><b>true</b></td></tr>
+      <tr><td><code>graph_signals</code></td><td>false</td><td><b>true</b></td><td><b>true</b></td></tr>
+      <tr><td><code>autocut</code></td><td>false</td><td><b>true</b></td><td><b>true</b></td></tr>
+      <tr><td><code>contextual_retrieval</code></td><td>none</td><td>title</td><td>per_chunk_synopsis</td></tr>
+      <tr><td><code>searchLimit</code></td><td>10</td><td>25</td><td>50</td></tr>
+      <tr><td>cache（相似度阈/ttl）</td><td>0.92 / 3600s</td><td>0.92 / 3600s</td><td>0.92 / 3600s</td></tr>
+    </tbody>
+  </table></div>
+  <p><strong>解析链</strong>（纯函数 <code>resolveSearchMode</code>）：</p>
+  <pre><code>1. perCallOpts.&lt;key&gt; 若定义   → 胜出（SearchOpts）
+2. config.search.&lt;key&gt; 若定义 → 胜出（per-key 覆盖）
+3. MODE_BUNDLES[config.search.mode].&lt;key&gt; → 模式默认
+4. MODE_BUNDLES.balanced.&lt;key&gt;          → 安全兜底</code></pre>
+  <div class="note a"><div class="t">成本量级（下游 Agent 输入成本，gbrain 本身可忽略）</div>
+    corner-to-corner 差 25×。10K queries/月：conservative+Haiku ≈ $40/mo；balanced+Sonnet ≈ $300/mo；tokenmax+Opus ≈ $1000/mo。tokenmax 另加 ~$1.50/1K 的 Haiku 扩展费。缓存命中约省 50%。per-call mode 仅对可信本地开放，防远程升级到 tokenmax。</div>
+
+  <h3>5.4 语义查询缓存与 knobs_hash <span class="anchor">#</span></h3>
+  <p>缓存<strong>按查询嵌入的 cosine 相似度</strong>命中（非精确文本），默认阈 0.92 / TTL 3600s。行 PK = <code>sha256(sourceId::queryText::knobsHash)</code>。<strong>关键防污染机制</strong>：<code>knobsHash</code>（<code>KNOBS_HASH_VERSION = 12</code>）把 mode、缓存标志、tokenBudget、expansion、searchLimit、所有 reranker 字段、<strong>embedding 列+provider</strong>、graph_signals、<strong>schema pack 名+版本</strong>、contextual_retrieval 档、autocut、relational_retrieval+深度、以及解析后的硬排除前缀列表全部折进 key。因此 tokenmax 写入与 conservative 写入落在<strong>不同行</strong>，绝不会串味。追加是严格 append-only 并 bump 版本（重排会静默重建所有持久行的 hash）。</p>
+  <pre><code>SELECT qc.results, qc.embedding &lt;=&gt; $1::vector AS distance ...
+FROM query_cache qc
+WHERE qc.source_id = $2
+  AND qc.knobs_hash = $4                         -- 防跨模式污染
+  AND qc.embedding &lt;=&gt; $1::vector &lt; $3            -- distance &lt; 1 - similarity
+  AND qc.created_at + (qc.ttl_seconds||' seconds')::interval &gt; now()
+  AND &lt;CACHE_GATE_WHERE_CLAUSE&gt;                   -- 两层 page-generation 门
+ORDER BY qc.embedding &lt;=&gt; $1::vector LIMIT 1</code></pre>
+  <p>另有<strong>两层 page-generation 门</strong>：当底层页面自存储起 generation 已变，缓存行失效。缓存跳过条件：缓存禁用、<code>walkDepth&gt;0</code>、设 <code>nearSymbol</code>、非默认嵌入列、或开启 <code>adaptiveReturn</code>。</p>
+
+  <h3>5.5 意图分类、扩展、rerank、autocut、boost <span class="anchor">#</span></h3>
+  <div class="grid2">
+    <div class="card">
+      <h4>意图分类（零 LLM）</h4>
+      <p><code>classifyQuery</code> 单次正则产出 5 个正交轴：intent（entity/temporal/event/general）、suggestedDetail、suggestedRecency、suggestedSalience、suggestedModality。意图→权重映射（最大 1.25×，只破平不翻转），如 entity: keywordWeight 1.15、exactMatchBoost 1.25。</p>
+    </div>
+    <div class="card">
+      <h4>多查询扩展</h4>
+      <p>Haiku 把查询改写为 ≤3 变体（仅 tokenmax）。双层消毒：输入 <code>sanitizeQueryForPrompt</code>（剥离注入前缀 ignore/forget/override/system），输出 <code>sanitizeExpansionOutput</code>（去重、去控制符、≤2 备选）。</p>
+    </div>
+    <div class="card">
+      <h4>Rerank（cross-encoder）</h4>
+      <p>默认 <code>zeroentropyai:zerank-2</code>，在 dedup 与 slice 之间。发送 top <code>topNIn</code> 的 chunk_text 给 <code>gateway.rerank()</code>，重排头部、原序补尾（保召回）。<strong>Fail-open</strong>：任何错误记 JSONL 审计并原序返回。</p>
+    </div>
+    <div class="card">
+      <h4>Autocut（断崖裁剪）</h4>
+      <p>仅在 cross-encoder 的 <code>rerank_score</code> 上运行（RRF 的 rank1→rank2 gap 被实测无区分度）。归一后找 ≥ <code>jumpRatio</code>（0.20）的最大连续断崖并裁剪。alias-hop 注入页受 <code>preserve</code> 保护。仅首页生效。</p>
+    </div>
+  </div>
+  <p><strong>Recency boost</strong>：每前缀半衰期衰减，evergreen 前缀（<code>concepts/</code>、<code>originals/</code>）factor=1.0，<code>daily/</code>/<code>chat/</code> 激进衰减。<strong>Salience boost</strong>：<code>1 + k·log(1+score)</code>，score = emotional_weight + take_count（对数压缩，界 ~[1.0,1.6]），与 recency 正交。<strong>adaptive_return</strong>：意图驱动的上限（entity→2，其它→6），是「上限」而非「断崖」（rank-1 在单答案场景 ~94% 正确）。所有 post-fusion boost 共享一个 <code>floorThreshold</code>，防弱重叠候选靠元数据 boost 越级。</p>
+</section>
+
+<!-- ============================================================= -->
+<!-- SECTION 6 — MCP -->
+<!-- ============================================================= -->
+<section id="s6">
+  <h2 class="sh"><span class="num">06</span>MCP 集成架构</h2>
+  <p class="lead">GBrain 通过 MCP（Model Context Protocol）把 113 个 op 中的非 localOnly 部分暴露给 AI 客户端。存在<strong>三套传输</strong>：stdio、legacy bearer HTTP、OAuth 2.1 HTTP；外加本 fork 的 admin cookie 代理数据通道。所有传输经统一 <code>dispatch.ts</code> 漏斗，杜绝漂移。</p>
+
+  <h3>6.1 三传输 + 双数据通道 <span class="anchor">#</span></h3>
+  <figure>
+    <div class="mermaid">
+flowchart TB
+  subgraph CLIENTS["MCP 客户端"]
+    CC["Claude Code / Cursor<br/>(本地 stdio)"]
+    CD["Claude Desktop / Cowork<br/>(远程 HTTP)"]
+    CX["ChatGPT / Perplexity<br/>(OAuth 2.1 + PKCE)"]
+    SPA["Admin SPA<br/>(浏览器)"]
+  end
+  CC -->|"stdin/stdout pipe"| STDIO["stdio server<br/>mcp/server.ts<br/>remote=true, 无 per-token 鉴权"]
+  CD -->|"Bearer"| LEGACY["legacy bearer HTTP<br/>http-transport.ts<br/>SHA-256 token, 无 scope 强制"]
+  CX -->|"OAuth access token"| OAUTH["OAuth 2.1 HTTP<br/>serve-http.ts /mcp<br/>scope 强制 + DCR"]
+  SPA -->|"in-mem Bearer → POST /mcp"| OAUTH
+  SPA -->|"HttpOnly cookie → POST /admin/api/op"| PROXY["admin cookie 代理<br/>requireAdmin"]
+  STDIO --> DISP["dispatch.ts<br/>validateParams → buildContext → handler"]
+  LEGACY --> DISP
+  OAUTH -->|"hasScope 门 + localOnly 过滤"| DISP
+  PROXY -->|"hasScope 门"| DISP
+  DISP --> ENG["BrainEngine"]
+    </div>
+    <figcaption>图 6.1 — 三传输 + admin 双通道，全部收敛到统一 dispatch。localOnly op 从 mcpOperations 预过滤，永不进远程目录</figcaption>
+  </figure>
+
+  <div class="tablewrap"><table>
+    <thead><tr><th>传输</th><th>文件</th><th>鉴权</th><th>scope 强制</th><th>典型客户端</th></tr></thead>
+    <tbody>
+      <tr><td>stdio</td><td><code>mcp/server.ts</code></td><td>本地管道（无 token）</td><td>否（takes 默认仅 world）</td><td>Claude Code / Cursor</td></tr>
+      <tr><td>legacy bearer HTTP</td><td><code>mcp/http-transport.ts</code></td><td>SHA-256 <code>access_tokens</code></td><td>否（legacy 无 scope）</td><td>老部署</td></tr>
+      <tr><td>OAuth 2.1 HTTP</td><td><code>serve-http.ts</code></td><td>OAuth（client_credentials / refresh / DCR）</td><td><b>是（hasScope）</b></td><td>ChatGPT / Perplexity / Cowork</td></tr>
+      <tr><td>admin cookie 代理</td><td><code>serve-http.ts</code> <span class="lo">CUSTOM</span></td><td>HttpOnly cookie <code>gbrain_admin</code></td><td>是（scopes:['admin']）</td><td>Admin SPA</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>6.2 TTY / Web 双表层 <span class="anchor">#</span></h3>
+  <p>本 fork 的 Admin SPA 呈现<strong>两个表层</strong>，共用 <code>routes.ts</code> 单一配置源：</p>
+  <div class="grid2">
+    <div class="card">
+      <h4>Ops 表层（暗色驾驶舱，6 页）</h4>
+      <p>裸名 hash（<code>#dashboard</code>…）：Dashboard（实时请求流+统计）、Agents（连接的 Agent / API key 管理）、Request Log（审计）、Calibration（校准 profile + SVG 图）、JobsWatch（1s 轮询作业队列）、Login。</p>
+    </div>
+    <div class="card">
+      <h4>Brain 表层（浅色阅读界面，8 页）</h4>
+      <p>前导斜杠 hash（<code>#/</code>…）：今日动态、内容入库（Inbox）、精准检索（Ask）、知识网络（Graph，lazy）、真理沉淀（Synthesize）、后台调度（Jobs）、技能进化（Skills）、三大范式。前导斜杠正是区分 <code>#/jobs</code>（Brain）与 <code>#jobs</code>（Ops）的关键。</p>
+    </div>
+  </div>
+
+  <h3>6.3 数据双通道：Tier1 REST + Tier3 MCP <span class="anchor">#</span></h3>
+  <p>前端有<strong>两条同源通道</strong>（无绝对 base URL）：</p>
+  <ul>
+    <li><strong>Tier1 REST</strong>（<code>admin/src/api.ts</code>）：<code>/admin/api/*</code>，<code>credentials:'same-origin'</code>（cookie）。用于 login、stats、health、agents、requests、apiKeys、calibration、jobs/watch。</li>
+    <li><strong>Tier3 MCP</strong>（<code>admin/src/lib/mcp-client.ts</code> 的 <code>callMcp&lt;T&gt;</code>）：完整 <code>operations.ts</code> 契约 over JSON-RPC。<strong>通道自动选择</strong>：内存里有 MCP token → <code>POST /mcp</code>（<code>Authorization: Bearer</code>）；否则 → cookie 代理 <code>POST /admin/api/op</code>。两者返回同一 <code>{result: ToolResult}</code> 信封，<code>parseMcpPayload</code> 同时处理裸 JSON 与 SSE 帧。</li>
+  </ul>
+  <div class="note g"><div class="t">信任模型（D11/D12）</div>
+    会话令牌<strong>从不</strong>写入 localStorage/sessionStorage。会话凭据是 <code>POST /admin/login</code> 设的 HttpOnly cookie（24h）；MCP Bearer token 只活在模块级变量里。401 → 重定向 <code>#login</code>（不静默重认证）；Bearer 分支 401 只清内存 token，下次自动回退 cookie 代理。cookie 代理路径 <code>/admin/api/op</code> 同样经 <code>hasScope</code> + <code>dispatchToolCall({remote:true})</code>，并广播到 SSE 活动流——所以 cookie 流量与 Bearer Agent 流量在审计日志里一视同仁。</div>
+
+  <figure>
+    <div class="mermaid">
+sequenceDiagram
+  participant SPA as Admin SPA
+  participant P as /admin/api/op (cookie)
+  participant M as /mcp (Bearer)
+  participant D as dispatch.ts
+  participant E as Engine
+  SPA->>SPA: callMcp('query', {...})
+  alt 内存有 Bearer token
+    SPA->>M: POST /mcp (Authorization: Bearer)
+    M->>M: hasScope(scopes,'read') + !localOnly
+  else 无 token
+    SPA->>P: POST /admin/api/op (HttpOnly cookie)
+    P->>P: requireAdmin → scopes:['admin']
+  end
+  M->>D: dispatchToolCall(remote:true)
+  P->>D: dispatchToolCall(remote:true)
+  D->>E: op.handler(ctx, params)
+  E-->>D: result
+  D-->>SPA: {result: ToolResult}
+  Note over M,P: 两路都写 mcp_request_log + 广播 SSE 活动流
+    </div>
+    <figcaption>图 6.2 — Tier3 MCP 通道自动选择：有 Bearer 走 /mcp，否则走 cookie 代理，殊途同归</figcaption>
+  </figure>
+
+  <h3>6.4 scope 与 localOnly 的远程强制 <span class="anchor">#</span></h3>
+  <ul>
+    <li><strong>localOnly — 结构性排除</strong>：<code>const mcpOperations = operations.filter(op =&gt; !op.localOnly)</code>。localOnly op 永不出现在 <code>tools/list</code>，调用它返回 <code>unknown_operation</code>。共 8 个 localOnly op（见 <a href="#s11">§11</a>）。</li>
+    <li><strong>scope — 每请求校验</strong>：<code>requiredScope = op.scope || 'read'</code>，<code>hasScope(authInfo.scopes, requiredScope)</code> 失败即 403 <code>insufficient_scope</code> 并记 <code>mcp_request_log</code>；通过才 <code>dispatchToolCall</code>。本地 CLI（<code>remote===false</code>）完全跳过 scope（OS 即边界）。</li>
+  </ul>
+
+  <h3>6.5 Source 绑定与 OAuth 客户端 <span class="anchor">#</span></h3>
+  <p>OAuth 客户端行绑定源：<code>oauth_clients.source_id → AuthInfo.sourceId</code>（<strong>写权限</strong>），<code>federated_read TEXT[] → AuthInfo.allowedSources</code>（<strong>读联邦</strong>，独立于写源）。读侧全部经 <code>sourceScopeOpts</code>：</p>
+  <pre><code>export function sourceScopeOpts(ctx) {
+  const allowed = ctx.auth?.allowedSources;
+  if (allowed &amp;&amp; allowed.length &gt; 0) return { sourceIds: allowed }; // 联邦读
+  if (ctx.sourceId) return { sourceId: ctx.sourceId };              // 标量
+  return {};                                                        // 本地/未设 → 不限
+}  // 攻击者传空 allowedSources:[] 不会放大为「全部」——落到标量分支</code></pre>
+  <p>Thin-client（TTY）：<code>gbrain init --mcp-only</code> 造一个无本地内容、指向远程 <code>gbrain serve --http</code> 的客户端。路由 seam <code>runThinClientRouted</code> 在 <code>connectEngine()</code> <strong>之前</strong>检测（<code>isThinClient(cfg)</code>），从不打开空的本地 PGLite；localOnly op 本地以 <code>refuseThinClient</code> 拒绝并给提示。</p>
+</section>
+
+<!-- ============================================================= -->
+<!-- SECTION 7 — KNOWLEDGE GRAPH -->
+<!-- ============================================================= -->
+<section id="s7">
+  <h2 class="sh"><span class="num">07</span>知识图谱功能</h2>
+  <p class="lead">GBrain 的知识图谱是<strong>自织的</strong>：每次页面写入都以零 LLM 的确定性正则抽取实体引用、创建类型化边。图谱有页面图与代码图两套，配 4 种遍历 op 与 ForceGraph 可视化。</p>
+
+  <h3>7.1 类型化链接抽取（零 LLM） <span class="anchor">#</span></h3>
+  <p><code>extractPageLinks</code>（<code>src/core/link-extraction.ts</code>，纯函数）从<strong>四个来源</strong>抽候选边：</p>
+  <ol>
+    <li><strong>Markdown/wikilink 引用</strong>：<code>[Name](people/slug)</code>、限定 wikilink <code>[[source-id:dir/slug|Display]]</code>、非限定 <code>[[dir/slug]]</code>、裸名 <code>[[bare-name]]</code>（需解析）。目录白名单：people|companies|meetings|concepts|deal|civic|project|source|media|yc|tech|finance|personal|openclaw|entities。</li>
+    <li><strong>散文中的裸 slug</strong>（如 <code>people/alice-chen</code>）。</li>
+    <li><strong>Frontmatter 类型化边</strong>（<code>FRONTMATTER_LINK_MAP</code> 单一事实来源）。</li>
+    <li><strong>NER/gazetteer mentions</strong>（<code>by-mention.ts</code>）：构建实体 gazetteer，最大匹配扫正文，写 <code>link_source='mentions'</code>，且<strong>不计入搜索排序的 backlink 数</strong>。</li>
+  </ol>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Frontmatter 字段</th><th>页面类型</th><th>link_type</th><th>方向</th></tr></thead>
+    <tbody>
+      <tr><td><code>company</code>/<code>companies</code></td><td>person</td><td>works_at</td><td>outgoing</td></tr>
+      <tr><td><code>founded</code></td><td>person</td><td>founded</td><td>outgoing</td></tr>
+      <tr><td><code>key_people</code></td><td>company</td><td>works_at</td><td><b>incoming</b></td></tr>
+      <tr><td><code>investors</code></td><td>company/deal</td><td>invested_in</td><td>incoming</td></tr>
+      <tr><td><code>lead</code></td><td>deal</td><td>led_round</td><td>incoming</td></tr>
+      <tr><td><code>attendees</code></td><td>meeting</td><td>attended</td><td>incoming</td></tr>
+      <tr><td><code>sources</code></td><td>any</td><td>discussed_in</td><td>incoming</td></tr>
+    </tbody>
+  </table></div>
+  <p><strong>关系类型推断是确定性正则</strong>（<code>inferLinkType</code>），优先级 <code>founded &gt; invested_in &gt; advises &gt; works_at &gt; page-role prior &gt; mentions</code>。两层：每边测 slug 周围 ~240 字窗口的动词正则（<code>WORKS_AT_RE</code> 等，在 240 页语料上把 works_at 从 58% 调到 &gt;85%）；落到 mentions 时再用源页自我描述做 page-role 先验偏置（如 VC partner 的组合列表 → <code>invested_in</code>）。</p>
+
+  <figure>
+    <div class="mermaid">
+flowchart TB
+  PAGE["put_page(content)"] --> RA["runAutoLink (best-effort, 非阻塞)"]
+  RA --> REMOTE{"ctx.remote?"}
+  REMOTE -->|远程/不可信| SKIP["skipped: remote"]
+  REMOTE -->|本地/可信| EXTRACT["extractPageLinks"]
+  EXTRACT --> S1["markdown/wikilink"]
+  EXTRACT --> S2["裸 slug"]
+  EXTRACT --> S3["frontmatter FRONTMATTER_LINK_MAP"]
+  S1 & S2 & S3 --> RESOLVE["makeResolver 4级阶梯<br/>slug→dirHint→pg_trgm≥0.55→searchKeyword"]
+  RESOLVE --> LOCK["pg_advisory_xact_lock(slug)"]
+  LOCK --> RECON["协调: 保留 manual 边<br/>删陈旧边, 串 sourceId"]
+  RECON --> LINKS[("links 表<br/>link_type/link_source/origin")]
+    </div>
+    <figcaption>图 7.1 — put_page 后的自动织图：抽取→实体解析→咨询锁内协调（非追加），手工边永不被动</figcaption>
+  </figure>
+
+  <h3>7.2 实体解析（makeResolver） <span class="anchor">#</span></h3>
+  <p>每次运行缓存的 <code>SlugResolver</code>，<code>resolve(name, dirHint)</code> 4 级阶梯：① 已是 slug？→ <code>getPage</code> 确认；② dirHint+slugify → 精确 <code>getPage</code>；③ <strong>pg_trgm 模糊标题匹配 ≥0.55</strong>；④ <strong>仅 live 模式</strong>回退 <code>searchKeyword</code>（top ≥0.8，强制 <code>expand:false</code> 避 Haiku 成本；batch 模式跳过以保迁移确定性）。未解析返回 <code>null</code>（不写死链）。</p>
+
+  <h3>7.3 links 表与 provenance <span class="anchor">#</span></h3>
+  <p><code>link_source</code> 从封闭白名单（markdown|frontmatter|manual）逐步放宽为 <strong>kebab-case 正则</strong>，可传任意来源标签（如 <code>citation-graph</code>）。唯一键含 <code>link_source</code> + <code>origin_page_id</code> 且 <strong>NULLS NOT DISTINCT</strong>（PG15+），使限定 wikilink 边与裸名 wikilink-resolved 边保留为<strong>不同行</strong>（不同 provenance = 不同审计轨迹）。<code>link_kind</code>（plain/typed_ner）区分正文 mention 与动词派生的类型边。</p>
+
+  <h3>7.4 图遍历与可视化 <span class="anchor">#</span></h3>
+  <div class="grid3">
+    <div class="card"><h4><code>traverse_graph</code></h4><p><code>WITH RECURSIVE</code> CTE，从 slug 起，<code>NOT (id = ANY(visited))</code> 防环。<code>frontier_cap</code>（默 200）限每层 hub 扇出；<code>node_limit</code>（默 300，顶 2000）。</p></div>
+    <div class="card"><h4><code>graph_overview</code></h4><p>无根：<code>deg</code> CTE 计算度数，取 top-N 高度数页，只返回这些顶点<strong>之间</strong>的边。驱动「未选根」的默认骨架视图（本 fork 新增）。</p></div>
+    <div class="card"><h4>ForceGraph</h4><p><code>react-force-graph-2d</code>（canvas）+ d3-force。节点色按页面类型、边色按 <code>link_type</code> 的确定性哈希。20 项 LRU 缓存，独立于后端 query_cache。</p></div>
+  </div>
+  <pre><code>// 边色：link_type 的稳定哈希 → 固定调色板（graph-model.ts）
+export function edgeColorVarFor(linkType) {
+  if (!linkType) return '--color-hairline';
+  let h = 0;
+  for (let i = 0; i &lt; linkType.length; i++) h = (h * 31 + linkType.charCodeAt(i)) &gt;&gt;&gt; 0;
+  return EDGE_PALETTE[h % EDGE_PALETTE.length];
+}</code></pre>
+
+  <h3>7.5 代码图（Code Intelligence） <span class="anchor">#</span></h3>
+  <p>导入时用 <strong>tree-sitter</strong> 建边（<code>calls | imports | references</code>），接收者类型解析把 <code>obj.method()</code> 升级为 <code>Class::method</code>。边先<strong>未解析</strong>发出，落到最内层包含 chunk，持久化到两表：<code>code_edges_chunk</code>（两端已知 chunk）与 <code>code_edges_symbol</code>（目标仅知限定名）。读时 UNION。<code>code_blast</code>/<code>code_flow</code> 走 JS 层 BFS（非 SQL CTE），每深度置信 <code>1/(1+0.3·depth)</code>；<code>code_flow</code> 终端节点经 <code>classifySink</code> 标注 <code>db_call|http_call|file_io|process_exec</code>。</p>
+
+  <h3>7.6 本体、专家路由、轨迹 <span class="anchor">#</span></h3>
+  <div class="grid3">
+    <div class="card"><h4>Ontology 本体</h4><p>骑在 <code>facts</code> 表上（双时序）。<code>mergeOntologyFact</code> supersede 而非覆盖；<code>findOntologyConflicts</code> 用 <code>HAVING count(DISTINCT value)≥2 AND count(DISTINCT source)≥2</code> 检出真实分歧（不误判时序取代）。</p></div>
+    <div class="card"><h4>find_experts 专家路由</h4><p><code>score = expertise × max(0.1, recency_decay) × (0.5+0.5·salience)</code>，expertise=log1p(hybrid_score)，recency=exp(-days/180)（6 月半衰）。跑 hybridSearch 时关 salience/recency 取干净相关度。</p></div>
+    <div class="card"><h4>find_trajectory 轨迹</h4><p>按 <code>valid_from ASC</code> 取类型化 claim；<code>detectRegressions</code> 检连续下跌 ≤ -10%；<code>computeDriftScore = 1 - mean(cosine(emb[i],emb[i-1]))</code>（&lt;3 点为 null）。</p></div>
+  </div>
+</section>
+
+<!-- ============================================================= -->
+<!-- SECTION 8 — SKILLS -->
+<!-- ============================================================= -->
+<section id="s8">
+  <h2 class="sh"><span class="num">08</span>技能系统</h2>
+  <p class="lead">Skills 是<strong>工具无关的「胖 markdown」文件</strong>（<code>skills/&lt;slug&gt;/SKILL.md</code>），本质是喂给 Agent 的操作指令。约 48 个技能通过 frontmatter 的 <code>triggers</code> 做运行时路由，并用「功能域解析器」两层分发压缩路由文件。</p>
+
+  <h3>8.1 SKILL.md 文件格式 <span class="anchor">#</span></h3>
+  <p>每个技能是 YAML frontmatter + 散文正文。正文即 Agent 的操作说明——当它说「search / store / 查」时，Agent 调用本服务器上同名的 MCP 工具。frontmatter 携带 <code>name</code>、<code>description</code>、<code>triggers[]</code>（路由短语）、<code>tools[]</code>（该技能调用的 op）、<code>mutating</code>、<code>writes_to[]</code>（受许可的写前缀）。正文遵循一致性结构：<code>## Contract</code>、<code>## Phases/Workflow</code>、<code>## Anti-Patterns</code>、<code>## Output Format</code>、<code>## Quality Rules</code>。</p>
+  <div class="note"><div class="t">路由是运行时发现，非表驱动</div>
+    Agent 遍历每个 <code>SKILL.md</code>，解析 <code>triggers:</code> 数组并对入站消息做子串/语义匹配。RESOLVER.md 里的托管块表格已于 v0.36 退役——路由现居 frontmatter。<code>skills/manifest.json</code> 是机器目录。</div>
+
+  <h3>8.2 两层分发：功能域解析器 <span class="anchor">#</span></h3>
+  <p><strong>问题</strong>：一技能一行会把 RESOLVER.md/AGENTS.md 撑到 25–30KB，吃掉上下文预算。<strong>方案</strong>：以<strong>一个功能域一条目</strong>替代 N 行，每条目用 <code>(dispatcher for: ...)</code> 子句声明其子技能。这是「层级 Agent 路由」的静态提示词模拟（对应 AnyTool、RAG-MCP、Anthropic 的 progressive disclosure）。</p>
+  <figure>
+    <div class="mermaid">
+flowchart TB
+  MSG["用户消息"] --> RESOLVER["RESOLVER.md 薄路由<br/>~13KB, 12-15 功能域"]
+  RESOLVER -->|匹配功能域| AREA["brain-ops<br/>(dispatcher for: enrich, query,<br/>brain-pdf, citation-fixer ...)"]
+  AREA -->|域内二次路由| SKILL["具体 SKILL.md<br/>frontmatter 常驻 ~80 tok<br/>正文按需加载"]
+  SKILL -->|正文指令| TOOLS["调用同名 MCP op"]
+    </div>
+    <figcaption>图 8.1 — 两层分发：路由文件→功能域→具体技能。(dispatcher for:) 子句是承重信号</figcaption>
+  </figure>
+  <div class="tablewrap"><table>
+    <thead><tr><th>变体</th><th>Opus 4.7</th><th>Sonnet 4.6</th><th>Haiku 4.5</th><th>体积</th></tr></thead>
+    <tbody>
+      <tr><td>baseline（270 行）</td><td>81.7%</td><td>86.7%</td><td>73.3%</td><td>25KB</td></tr>
+      <tr><td><b>functional-areas</b></td><td><b>98.3%</b></td><td><b>100%</b></td><td><b>88.3%</b></td><td><b>13KB</b></td></tr>
+      <tr><td>无 dispatcher 子句</td><td>63.3%</td><td>41.7%</td><td>65.0%</td><td>10KB</td></tr>
+    </tbody>
+  </table></div>
+  <p>剥掉 <code>(dispatcher for: ...)</code> 子句会让 Sonnet 崩到 41.7%——+13~+17pp 的增益、48% 的体积，全靠该子句让 LLM 钻进子技能。甜点区 12–15 个域。</p>
+
+  <h3>8.3 技能包（Skillpack）与 MCP 发布 <span class="anchor">#</span></h3>
+  <p>Skillpack 是可分发的技能捆绑，由 <code>skillpack.json</code>（<code>api_version:"gbrain-skillpack-v1"</code>）描述：<code>name</code>、<code>version</code>、<code>gbrain_min_version</code>、<code>skills[]</code>，加 runbooks/unit_tests/e2e_tests/llm_evals/routing_evals。<code>gbrain skillpack scaffold</code> 把技能脚手架进宿主仓库，宿主拥有文件（<code>gbrain upgrade</code> 不覆盖）。</p>
+  <p><strong>Brain-resident skillpack</strong>：大脑仓库可设 <code>brain_resident:true</code> + <code>schema_pack</code> 携带自己的可发布包，并报告 <code>schema_pack_match</code> 让连接的 Agent 知道包是否适配。<strong>MCP 发现 op</strong>（均 <span class="sc r">read</span>，受 <code>mcp.publish_skills</code> 门）：<code>list_skills</code>（返回 <code>usable_tools/unavailable_tools</code>）、<code>get_skill</code>（返回正文 + frontmatter 白名单投影；传 <code>source_id</code> 取 brain-resident 包技能）、<code>list_brain_skillpack</code>。配套 <code>gbrain-advisor</code> 技能 + <code>advisor</code> op 给只读的排序「下一步高杠杆动作」（另受 <code>mcp.publish_advisor</code> 门）。</p>
+
+  <h3>8.4 技能分类（~48） <span class="anchor">#</span></h3>
+  <div class="grid2">
+    <div class="card"><h4>原始 8（一致性迁移）</h4><p>ingest（路由器）、query、maintain、enrich、briefing、migrate、setup、publish</p></div>
+    <div class="card"><h4>Brain 技能</h4><p>signal-detector、brain-ops、idea-ingest、media-ingest、meeting-ingestion、citation-fixer、repo-architecture、skill-creator、daily-task-manager</p></div>
+    <div class="card"><h4>运营 + 身份</h4><p>daily-task-prep、cross-modal-review、cron-scheduler、reports、testing、soul-audit、webhook-transforms、data-research、minion-orchestrator</p></div>
+    <div class="card"><h4>Schema / 内容 / 阅读</h4><p>schema-author、schema-unify、brain-taxonomist、frontmatter-guard、eiirp；capture、book-mirror、article-enrichment、strategic-reading、concept-synthesis、idea-lineage、perplexity-research、archive-crawler、academic-verify、brain-pdf</p></div>
+  </div>
+  <p>另有 Skillify 闭环（skillify、skillpack-check、skillpack-harvest、functional-area-resolver、skill-optimizer）与 setup/health（cold-start、gbrain-upgrade、gbrain-advisor、smoke-test、ask-user）。</p>
+</section>
+
+<!-- ============================================================= -->
+<!-- SECTION 9 — DATABASE -->
+<!-- ============================================================= -->
+<section id="s9">
+  <h2 class="sh"><span class="num">09</span>数据库设计</h2>
+  <p class="lead">GBrain 在 <code>BrainEngine</code> 抽象之下支持两种引擎：<strong>PGLite</strong>（嵌入式 WASM Postgres，零配置默认，2 秒就绪）与 <strong>Postgres + pgvector</strong>（Supabase / 自托管，1000+ 文件推荐）。两引擎<strong>锁步（parity）</strong>演进，由测试钉死。</p>
+
+  <h3>9.1 引擎工厂与 BrainEngine 接口 <span class="anchor">#</span></h3>
+  <pre><code>export async function createEngine(config): Promise&lt;BrainEngine&gt; {
+  const engineType = config.engine || 'postgres';
+  switch (engineType) {
+    case 'pglite':   { const { PGLiteEngine } = await import('./pglite-engine.ts');   return new PGLiteEngine(); }
+    case 'postgres': { const { PostgresEngine } = await import('./postgres-engine.ts'); return new PostgresEngine(); }
+    default: throw new Error(`Unknown engine type: "${engineType}"...`);
+  }
+}  // 动态 import：PGLite 的 WASM 永不为 Postgres 用户加载</code></pre>
+  <p><code>engine.ts</code> 定义 <code>interface BrainEngine</code>（~2225 行类型），<code>PostgresEngine</code>（6357 行）与 <code>PGLiteEngine</code>（6098 行）锁步实现。<code>readonly kind: 'postgres'|'pglite'</code> 用于 parity 分支。关键面：生命周期（<code>connect</code>、<code>initSchema</code>、<code>transaction</code>、<code>withReservedConnection</code>、<code>runMigration</code>）、页面 CRUD、chunk/embedding、搜索（<code>searchKeyword</code>、<code>searchVector(Float32Array)</code>）、图/链接/标签/时间线、takes/facts/dream。多数读方法接 <code>opts?:{sourceId?;sourceIds?}</code> 让 <code>sourceScopeOpts</code> 输出直接展开。</p>
+
+  <h3>9.2 核心数据模型 <span class="anchor">#</span></h3>
+  <figure>
+    <div class="mermaid">
+erDiagram
+  sources ||--o{ pages : "source_id (CASCADE)"
+  pages ||--o{ content_chunks : "page_id"
+  pages ||--o{ links : "from/to/origin"
+  pages ||--o{ tags : "page_id"
+  pages ||--o{ timeline_entries : "page_id"
+  pages ||--o{ page_versions : "page_id"
+  pages ||--o{ raw_data : "page_id"
+  pages ||--o{ takes : "page_id"
+  sources ||--o{ facts : "source_id"
+  sources ||--o{ query_cache : "source_id"
+  oauth_clients ||--o{ oauth_tokens : "client_id"
+  minion_jobs ||--o{ minion_inbox : "job_id"
+  content_chunks ||--o{ code_edges_chunk : "chunk_id"
+  pages {
+    serial id PK
+    text source_id FK
+    text slug
+    text type
+    jsonb frontmatter
+    bigint generation
+    timestamptz deleted_at
+  }
+  content_chunks {
+    serial id PK
+    int page_id FK
+    text chunk_text
+    vector embedding "1536d"
+    vector embedding_image "1024d"
+    tsvector search_vector
+  }
+  links {
+    serial id PK
+    int from_page_id FK
+    int to_page_id FK
+    text link_type
+    text link_source
+    int origin_page_id
+  }
+    </div>
+    <figcaption>图 9.1 — 核心实体关系（简化）：sources → pages → chunks/links/tags/timeline，slug 唯一性为 (source_id, slug)</figcaption>
+  </figure>
+  <p><code>schema.sql</code>（76KB）是 baseline（全 <code>CREATE ... IF NOT EXISTS</code>，~44 表）；<code>facts</code>、<code>takes</code>、<code>query_cache</code> 等在 <code>MIGRATIONS</code> 中后加。核心表：</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>表</th><th>关键列</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><code>sources</code></td><td><code>id</code> PK, <code>config</code> JSONB, <code>last_commit</code></td><td>大脑内一个仓库/源；slug 按源唯一</td></tr>
+      <tr><td><code>pages</code></td><td><code>slug</code>, <code>type</code>, <code>frontmatter</code>, <code>generation</code>, <code>deleted_at</code>, <code>emotional_weight</code>；<b>UNIQUE(source_id,slug)</b></td><td>核心内容；触发器 bump generation 供缓存失效</td></tr>
+      <tr><td><code>content_chunks</code></td><td><code>chunk_text</code>, <code>embedding vector(1536)</code>, <code>embedding_image vector(1024)</code>, 代码元数据, <code>search_vector</code></td><td>分块内容 + 嵌入；HNSW + GIN 索引</td></tr>
+      <tr><td><code>links</code></td><td><code>link_type</code>, <code>link_source</code>, <code>link_kind</code>, <code>origin_page_id</code></td><td>类型化知识图谱边</td></tr>
+      <tr><td><code>timeline_entries</code></td><td><code>date</code>, <code>summary</code>, <code>event_page_id</code></td><td>时间线 + Life Chronicle 事件投影</td></tr>
+      <tr><td><code>takes</code></td><td><code>claim</code>, <code>kind</code>(fact/take/bet/hunch), <code>weight</code>, <code>embedding</code></td><td>类型化/加权/署名断言 + 校准</td></tr>
+      <tr><td><code>facts</code></td><td><code>entity_slug</code>, <code>kind</code>, <code>visibility</code>, <code>valid_from/until</code>, <code>superseded_by</code></td><td>按源热记忆（双时序）</td></tr>
+      <tr><td><code>query_cache</code></td><td><code>id</code> sha256 PK, <code>embedding</code>, <code>results</code>, <code>knobs_hash</code></td><td>语义搜索缓存（防跨模式污染）</td></tr>
+      <tr><td><code>minion_jobs</code></td><td><code>status</code> CHECK, <code>parent_job_id</code>, <code>idempotency_key</code>, retry/stall 列</td><td>后台作业队列</td></tr>
+      <tr><td><code>oauth_clients</code></td><td><code>source_id</code>(写), <code>federated_read TEXT[]</code>(读), bound_* (agent 绑定)</td><td>OAuth 2.1 客户端 + 源/agent 绑定</td></tr>
+    </tbody>
+  </table></div>
+  <p>其它：<code>page_generation_clock</code>、<code>code_edges_chunk/symbol</code>、<code>subagent_*</code>、<code>dream_verdicts</code>、<code>gbrain_cycle_locks</code>、<code>calibration_profiles</code>、<code>eval_*</code>、<code>op_checkpoints</code>（sync 可恢复）、<code>context_volunteer_events</code>、<code>files</code>、<code>mcp_request_log</code>。</p>
+
+  <h3>9.3 迁移机制 <span class="anchor">#</span></h3>
+  <p><code>MIGRATIONS: Migration[]</code> 是 append-only 数组（<em>「新迁移加到末尾，永不修改既有」</em>），v1 是 schema.sql baseline，<code>LATEST_VERSION</code> 当前 <strong>124</strong>。</p>
+  <pre><code>interface Migration {
+  version: number;
+  name: string;
+  sql: string;                                        // 引擎无关
+  sqlFor?: { postgres?: string; pglite?: string };    // 引擎特定覆盖（胜出）
+  transaction?: boolean;                              // false → 不包事务（供 CONCURRENTLY）
+  handler?: (engine) =&gt; Promise&lt;void&gt;;                // TS 层数据变换
+  verify?: (engine) =&gt; Promise&lt;boolean&gt;;              // 可选后置探针
+}</code></pre>
+  <figure>
+    <div class="mermaid">
+flowchart LR
+  START["initSchema"] --> CUR["读 config.version"]
+  CUR --> PENDING["筛选 version 大于 current<br/>按 version 排序"]
+  PENDING --> LOOP{"逐条 pending"}
+  LOOP --> SQLSEL["sqlFor 按 kind 选择<br/>否则回退 sql"]
+  SQLSEL --> TXN{"是否包事务"}
+  TXN -->|"是 或 PGLite"| WRAP["engine.transaction<br/>SET LOCAL statement_timeout"]
+  TXN -->|"否 · PG CONCURRENTLY"| RES["withReservedConnection<br/>专用后端设 statement_timeout"]
+  WRAP --> HANDLER["m.handler 可选"]
+  RES --> HANDLER
+  HANDLER --> REC["记录 config.version = m.version"]
+  REC --> LOOP
+  LOOP -->|完成| DONE["就绪"]
+    </div>
+    <figcaption>图 9.2 — 迁移运行器：引擎特定 SQL 优先，CONCURRENTLY 走保留连接，3 次重试退避（5s/15s/45s）</figcaption>
+  </figure>
+  <p><code>CREATE INDEX CONCURRENTLY</code> 需 <code>transaction:false</code>（Postgres 拒绝在事务内建并发索引），仅 Postgres 生效、PGLite 忽略（无并发写者，用 <code>sqlFor.pglite</code> 的普通 <code>CREATE INDEX</code>）。失败的并发索引留下 invalid 残留，由 handler 预删（<code>pg_index.indisvalid</code>）。</p>
+
+  <h3>9.4 pgvector 与嵌入维度 <span class="anchor">#</span></h3>
+  <ul>
+    <li>默认文本嵌入 <strong>1536d</strong>（<code>content_chunks.embedding vector(1536)</code>、<code>takes.embedding</code>），来自 OpenAI <code>text-embedding-3-large</code>。</li>
+    <li>多模态/图像 <strong>1024d</strong>（<code>embedding_image</code>、<code>embedding_multimodal</code>，Voyage multimodal-3）。<code>modality</code> 列区分行。</li>
+    <li>索引：HNSW + <code>vector_cosine_ops</code>（全量 + image 部分索引），takes/facts/query_cache 嵌入亦 HNSW。</li>
+    <li><strong>HALFVEC</strong>：pgvector ≥0.7 时用 <code>halfvec_cosine_ops</code> 省空间；PGLite 内置 pgvector 始终 HALFVEC。维度按 <code>embedding_dimensions</code> config（默 1536）在迁移时解析。</li>
+    <li>嵌入以 <code>Float32Array</code> 跨引擎边界。</li>
+  </ul>
+  <div class="note r"><div class="t">JSONB 铁律（Postgres 特有陷阱）</div>
+    <strong>永不</strong> <code>JSON.stringify</code> 进 <code>::jsonb</code> cast——postgres.js 会双重编码为 jsonb 字符串标量，PGLite 掩盖此 bug（只在 Postgres/Supabase 暴露）。修复：传原始对象给 <code>engine.executeRaw</code> / 用 <code>executeRawJsonb</code> / <code>sql.json()</code>；positional 路径经 <code>$N::text::jsonb</code>。由 <code>check-jsonb-*.sh</code> + DATABASE_URL 门控的 e2e parity 测试兜底。</div>
+</section>
+
+<!-- ============================================================= -->
+<!-- SECTION 10 — INTEGRATION -->
+<!-- ============================================================= -->
+<section id="s10">
+  <h2 class="sh"><span class="num">10</span>集成与扩展</h2>
+  <p class="lead">GBrain 的扩展点覆盖：AI provider 插件（18 个 recipe）、chunker 策略、minions handler 注册、webhook 变换、schema pack、以及本 fork 的 admin cookie 代理与 CUSTOM 路由块。</p>
+
+  <h3>10.1 AI Provider 网关（18 recipes） <span class="anchor">#</span></h3>
+  <p>AI 网关（<code>src/core/ai/gateway.ts</code>）通过 recipe 抽象接入多 provider。<code>src/core/ai/recipes/</code> 现有 18 个：</p>
+  <p>
+    <span class="pill">anthropic</span><span class="pill">openai</span><span class="pill">azure-openai</span><span class="pill">google</span>
+    <span class="pill">groq</span><span class="pill">together</span><span class="pill">openrouter</span><span class="pill">deepseek ★fork</span>
+    <span class="pill">moonshot</span><span class="pill">minimax</span><span class="pill">zhipu</span><span class="pill">dashscope</span>
+    <span class="pill">voyage (embed)</span><span class="pill">zeroentropyai (rerank)</span><span class="pill">ollama ★本机</span>
+    <span class="pill">llama-server</span><span class="pill">llama-server-reranker</span><span class="pill">litellm-proxy</span>
+  </p>
+  <p>定价唯一真源在 <code>src/core/model-pricing.ts</code>（<code>CANONICAL_PRICING</code>），其它表都是派生视图，由 <code>model-pricing.test.ts</code> 钉死不漂移。嵌入定价单列 <code>embedding-pricing.ts</code>。本 fork 新增能力：<strong>Ollama 自定义 embed 维度</strong>（<code>dims.ts</code> 第 5 参 <code>providerId</code>）与 <strong>DeepSeek V4</strong>（Chat + Expansion，1M context）。</p>
+  <figure>
+    <div class="mermaid">
+flowchart LR
+  CALL["search/think/cycle 调用"] --> GW["gateway.ts<br/>build-gateway-config"]
+  GW --> RESOLVE["按 config 解析 recipe"]
+  RESOLVE --> R1["anthropic / openai / google ..."]
+  RESOLVE --> R2["deepseek / moonshot / zhipu ..."]
+  RESOLVE --> R3["ollama / llama-server (本机)"]
+  RESOLVE --> R4["voyage (embed) / zeroentropy (rerank)"]
+  R1 & R2 & R3 & R4 --> PRICE["model-pricing.ts<br/>唯一定价真源 → 派生视图"]
+    </div>
+    <figcaption>图 10.1 — AI 网关按 recipe 分派；定价单源，各消费者只带自己的 key 白名单与 miss 策略</figcaption>
+  </figure>
+
+  <h3>10.2 Chunker 与 Schema Pack 扩展 <span class="anchor">#</span></h3>
+  <div class="grid2">
+    <div class="card">
+      <h4>Chunkers（<code>src/core/chunkers/</code>）</h4>
+      <p><code>recursive.ts</code>（主路径）、<code>code.ts</code>（tree-sitter 代码分块）、<code>edge-extractor.ts</code>（代码边）、<code>qualified-names.ts</code>、<code>symbol-resolver.ts</code>、<code>llm.ts</code>、<code>semantic.ts</code>。</p>
+      <div class="note a" style="margin-top:8px"><div class="t">已知待办</div><code>chunk_strategy=semantic</code> 配置未接线，<code>chunkTextSemantic()</code> 是死代码，运行时始终走 recursive（CUSTOM.md 记录）。</div>
+    </div>
+    <div class="card">
+      <h4>Schema Packs</h4>
+      <p>可插拔的页面类型/链接类型/抽取规则定义。9 个 op（<code>get_active_schema_pack</code>、<code>list_schema_packs</code>、<code>schema_stats</code>、<code>schema_lint</code>、<code>schema_graph</code>、<code>schema_explain_type</code>、<code>schema_review_orphans</code>、<code>schema_apply_mutations</code>、<code>reload_schema_pack</code>）。<code>schema_apply_mutations</code> 是原子批量变更（全成或全滚）。schema pack 名+版本折进 query_cache 的 knobs_hash。</p>
+    </div>
+  </div>
+
+  <h3>10.3 Minions Handler 与 Webhook <span class="anchor">#</span></h3>
+  <p>后台作业 handler 通过 <code>worker.register(name, handler)</code>（<code>src/commands/jobs.ts</code>）注册，<code>execution-lane</code> 从名字推导通道。本 fork 新增 <code>inbox_enrich</code> handler。Minions 还有 <code>plugin-loader.ts</code> 支持插件化 handler。Webhook 变换由 <code>webhook-transforms</code> 技能 + 相关命令处理，把外部事件（邮件、日历、推文）规范化为页面写入。</p>
+
+  <h3>10.4 本 fork 的扩展点（fork-safe 为主） <span class="anchor">#</span></h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>扩展</th><th>位置</th><th>fork-safe?</th></tr></thead>
+    <tbody>
+      <tr><td>Admin cookie MCP 代理 <code>POST /admin/api/op</code></td><td><code>serve-http.ts</code> CUSTOM 块</td><td>后端改动（标记区块保留）</td></tr>
+      <tr><td>Inbox 入库工作流（4 op + handler）</td><td><code>inbox.ts</code>、<code>operations.ts</code></td><td>加法优先（新 op / 新可选参）</td></tr>
+      <tr><td>真理沉淀 Compiled Truth（3 op）</td><td><code>compile-truth.ts</code>、<code>conflicts.ts</code></td><td>新文件 + 新 op</td></tr>
+      <tr><td>Query <code>trace:true</code> 检索诊断</td><td><code>operations.ts</code> query op</td><td>新可选参数 + 条件分支</td></tr>
+      <tr><td>Graph 规模护栏 + <code>graph_overview</code></td><td>两引擎 + <code>operations.ts</code></td><td>非 fork-safe（需锁步合并）</td></tr>
+      <tr><td>Brain 管理表层（8 页 SPA）</td><td><code>admin/src/pages/brain/</code></td><td>纯前端，零上游改动</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note g"><div class="t">合并总则（CUSTOM.md）</div>
+    对上游代码改动的默认原则：<strong>两边都保留 · 逻辑整合 · 加法优先 · 标记区块 · 合并后必跑</strong>。目标是「未使用新能力时行为与上游一致」。</div>
+</section>
+
+<!-- ============================================================= -->
+<!-- SECTION 11 — API REFERENCE -->
+<!-- ============================================================= -->
+<section id="s11">
+  <h2 class="sh"><span class="num">11</span>API 参考文档</h2>
+  <p class="lead">基于 <code>src/core/operations.ts</code> 的完整 API 参考——<strong>113 个 Operation</strong>，同时生成 CLI verb 与 MCP tool。图例：<span class="sc r">R</span> read · <span class="sc w">W</span> write · <span class="sc a">A</span> admin · <span class="sc sa">SA</span> sources_admin · <span class="sc ag">AG</span> agent · <span class="lo">LOCAL</span> localOnly · ✎ mutating。</p>
+
+  <h3>11.1 Operation 类型与调用链 <span class="anchor">#</span></h3>
+  <figure>
+    <div class="mermaid">
+sequenceDiagram
+  participant C as 客户端 (CLI/MCP)
+  participant S as 表层 (cli.ts / serve-http.ts)
+  participant G as 门 (localOnly filter + hasScope)
+  participant D as dispatch.ts
+  participant V as validateParams
+  participant H as op.handler
+  participant SC as sourceScopeOpts
+  participant E as BrainEngine
+  C->>S: 调用 op(name, params)
+  S->>G: 远程? 检查 !localOnly + hasScope
+  alt localOnly 或 scope 不足
+    G-->>C: unknown_operation / insufficient_scope (+ mcp_request_log)
+  else 通过 (或本地 remote=false 跳过)
+    G->>D: dispatchToolCall
+    D->>V: validateParams(op, params)
+    V->>H: op.handler(ctx, params)
+    H->>SC: sourceScopeOpts(ctx)
+    SC->>E: engine 方法(opts.sourceId/sourceIds)
+    E-->>H: 结果
+    H-->>C: {content:[{type:text}], isError?}
+  end
+    </div>
+    <figcaption>图 11.1 — 一次 op 调用的完整链路：门控 → 分发 → 参数校验 → handler → 源作用域 → 引擎</figcaption>
+  </figure>
+
+  <h3>11.2 完整 Operations 目录（按功能分组） <span class="anchor">#</span></h3>
+
+  <h4>页面 CRUD + Inbox</h4>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Operation</th><th>Scope</th><th>标志</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>get_page</code></td><td><span class="sc r">R</span></td><td></td><td>按 slug 读页面（可 fuzzy）；软删默认隐藏；remote 剥离 takes/私有 facts</td></tr>
+      <tr><td><code>put_page</code></td><td><span class="sc w">W</span></td><td>✎</td><td>写/更新页面；分块、嵌入、协调标签/链接/时间线</td></tr>
+      <tr><td><code>delete_page</code></td><td><span class="sc w">W</span></td><td>✎</td><td>软删（72h 内可 restore）</td></tr>
+      <tr><td><code>restore_page</code></td><td><span class="sc w">W</span></td><td>✎</td><td>恢复软删页面</td></tr>
+      <tr><td><code>purge_deleted_pages</code></td><td><span class="sc a">A</span></td><td>✎ <span class="lo">LOCAL</span></td><td>硬删超过窗口的软删页（级联）</td></tr>
+      <tr><td><code>list_pages</code></td><td><span class="sc r">R</span></td><td></td><td>按 type/tag/updated_after 过滤 + 排序</td></tr>
+      <tr><td><code>list_inbox</code></td><td><span class="sc r">R</span></td><td></td><td>列 inbox/* 页 + 增强工作流状态</td></tr>
+      <tr><td><code>get_inbox_item</code></td><td><span class="sc r">R</span></td><td></td><td>取单个 inbox 项（原始/增强 + 类型化链接）</td></tr>
+      <tr><td><code>trigger_inbox_enrichment</code></td><td><span class="sc w">W</span></td><td>✎</td><td>队列化零 LLM 确定性增强</td></tr>
+      <tr><td><code>discard_inbox_items</code></td><td><span class="sc w">W</span></td><td>✎</td><td>丢弃 inbox 页（soft/hard）</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>搜索 / 检索 / 合成</h4>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Operation</th><th>Scope</th><th>标志</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>search</code></td><td><span class="sc r">R</span></td><td></td><td>关键词 FTS</td></tr>
+      <tr><td><code>query</code></td><td><span class="sc r">R</span></td><td></td><td>混合检索（向量+关键词+关系）；扩展/autocut/adaptive_return/trace</td></tr>
+      <tr><td><code>search_by_image</code></td><td><span class="sc r">R</span></td><td></td><td>图像作查询（path/data/URL）+ 可选文本精修</td></tr>
+      <tr><td><code>think</code></td><td><span class="sc w">W</span></td><td>✎</td><td>多跳合成：带引用答案 + 冲突/gap 分析</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>Takes / 校准</h4>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Operation</th><th>Scope</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>takes_list</code></td><td><span class="sc r">R</span></td><td>列 takes（按 holder/kind）</td></tr>
+      <tr><td><code>takes_search</code></td><td><span class="sc r">R</span></td><td>pg_trgm 搜 take claim 文本</td></tr>
+      <tr><td><code>takes_scorecard</code></td><td><span class="sc r">R</span></td><td>已解析 bet 的校准记分卡（准确率、Brier）</td></tr>
+      <tr><td><code>takes_calibration</code></td><td><span class="sc r">R</span></td><td>校准曲线：按声明权重分桶</td></tr>
+      <tr><td><code>get_calibration_profile</code></td><td><span class="sc r">R</span></td><td>读 holder 的活跃校准 profile</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>标签 / 链接 / 图</h4>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Operation</th><th>Scope</th><th>标志</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>add_tag</code> / <code>remove_tag</code></td><td><span class="sc w">W</span></td><td>✎</td><td>增/删页面标签</td></tr>
+      <tr><td><code>get_tags</code></td><td><span class="sc r">R</span></td><td></td><td>列页面标签</td></tr>
+      <tr><td><code>add_link</code> / <code>remove_link</code></td><td><span class="sc w">W</span></td><td>✎</td><td>创建/移除类型化边（带 provenance）</td></tr>
+      <tr><td><code>get_links</code> / <code>get_backlinks</code></td><td><span class="sc r">R</span></td><td></td><td>出/入链</td></tr>
+      <tr><td><code>list_link_sources</code></td><td><span class="sc r">R</span></td><td></td><td>列 link_source provenance + 计数</td></tr>
+      <tr><td><code>traverse_graph</code></td><td><span class="sc r">R</span></td><td></td><td>从页面遍历（depth/direction/link_type，护栏 node_limit/frontier_cap）</td></tr>
+      <tr><td><code>graph_overview</code></td><td><span class="sc r">R</span></td><td></td><td>无根全图概览：最连通页 + 其间边</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>时间线 / Chronicle / 本体</h4>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Operation</th><th>Scope</th><th>标志</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>add_timeline_entry</code></td><td><span class="sc w">W</span></td><td>✎</td><td>给页面加时间线条目</td></tr>
+      <tr><td><code>get_timeline</code></td><td><span class="sc r">R</span></td><td></td><td>取单页时间线（日期窗口）</td></tr>
+      <tr><td><code>chronicle_day</code></td><td><span class="sc r">R</span></td><td></td><td>某日（或 ISO 周）的事件 + 时间线</td></tr>
+      <tr><td><code>chronicle_on_this_day</code></td><td><span class="sc r">R</span></td><td></td><td>往年同一日历日的事件</td></tr>
+      <tr><td><code>chronicle_since</code></td><td><span class="sc r">R</span></td><td></td><td>某日起的事件（可按 kind 过滤）</td></tr>
+      <tr><td><code>chronicle_last_seen</code></td><td><span class="sc r">R</span></td><td></td><td>某实体最后出现时间</td></tr>
+      <tr><td><code>volunteer_chronicle</code></td><td><span class="sc r">R</span></td><td></td><td>Agent 定向：近期时间线 + 解析本体</td></tr>
+      <tr><td><code>chronicle_backfill</code></td><td><span class="sc a">A</span></td><td>✎ <span class="lo">LOCAL</span></td><td>扫会议/对话页入时间线事件</td></tr>
+      <tr><td><code>ontology_get</code></td><td><span class="sc r">R</span></td><td></td><td>as-of 时刻的每实体本体（维度→值）</td></tr>
+      <tr><td><code>ontology_propose</code></td><td><span class="sc w">W</span></td><td>✎</td><td>记一条来源化、置信加权、双时序观测</td></tr>
+      <tr><td><code>ontology_dimensions</code></td><td><span class="sc r">R</span></td><td></td><td>元本体：追踪的维度 + 计数</td></tr>
+      <tr><td><code>ontology_conflicts</code></td><td><span class="sc r">R</span></td><td></td><td>真实分歧的维度（≥2 值来自 ≥2 provenance）</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>Facts / Recall（热记忆）· Salience / 异常 / 专家 / 轨迹</h4>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Operation</th><th>Scope</th><th>标志</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>extract_facts</code></td><td><span class="sc w">W</span></td><td>✎</td><td>从一个 turn 抽个人知识事实入按源热记忆</td></tr>
+      <tr><td><code>recall</code></td><td><span class="sc r">R</span></td><td></td><td>查按源热记忆（facts）</td></tr>
+      <tr><td><code>forget_fact</code></td><td><span class="sc w">W</span></td><td>✎</td><td>遗忘一条事实（fence 划线 + valid_until）</td></tr>
+      <tr><td><code>get_recent_salience</code></td><td><span class="sc r">R</span></td><td></td><td>按情感+活动 salience 排序近期页</td></tr>
+      <tr><td><code>find_anomalies</code></td><td><span class="sc r">R</span></td><td></td><td>近期活动的统计异常（按 cohort 分组）</td></tr>
+      <tr><td><code>get_recent_transcripts</code></td><td><span class="sc r">R</span></td><td><span class="lo">LOCAL</span></td><td>近期原始对话转录一行摘要</td></tr>
+      <tr><td><code>find_experts</code></td><td><span class="sc r">R</span></td><td></td><td>按专长深度+关系新鲜度排 person/company</td></tr>
+      <tr><td><code>find_trajectory</code></td><td><span class="sc r">R</span></td><td></td><td>实体的类型化 claim 时间轨迹 + regression</td></tr>
+      <tr><td><code>volunteer_context</code></td><td><span class="sc r">R</span></td><td></td><td>推式：为滚动对话窗口自荐相关页</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>矛盾 / 真理沉淀 · 技能 / Advisor</h4>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Operation</th><th>Scope</th><th>标志</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>find_contradictions</code></td><td><span class="sc r">R</span></td><td></td><td>上次探针运行的疑似矛盾发现</td></tr>
+      <tr><td><code>find_conflicts</code></td><td><span class="sc r">R</span></td><td></td><td>检测某主题上冲突/重叠页面组</td></tr>
+      <tr><td><code>compile_truth</code></td><td><span class="sc r">R</span></td><td></td><td>LLM 合并候选页为权威正文 + diff（不落库）</td></tr>
+      <tr><td><code>adopt_compiled_truth</code></td><td><span class="sc w">W</span></td><td>✎</td><td>把编译真理落库（分块 + 重嵌入）</td></tr>
+      <tr><td><code>list_skills</code></td><td><span class="sc r">R</span></td><td></td><td>列大脑发布的技能目录</td></tr>
+      <tr><td><code>get_skill</code></td><td><span class="sc r">R</span></td><td></td><td>取单技能完整指令</td></tr>
+      <tr><td><code>list_brain_skillpack</code></td><td><span class="sc r">R</span></td><td></td><td>列 brain-resident skillpack（按源）</td></tr>
+      <tr><td><code>advisor</code></td><td><span class="sc r">R</span></td><td></td><td>从大脑状态排序只读「下一步动作」</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>代码智能 · Schema Packs</h4>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Operation</th><th>Scope</th><th>标志</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>code_callers</code> / <code>code_callees</code></td><td><span class="sc r">R</span></td><td></td><td>符号的直接调用者 / 被调用者</td></tr>
+      <tr><td><code>code_def</code> / <code>code_refs</code></td><td><span class="sc r">R</span></td><td></td><td>符号定义站点 / 全部引用</td></tr>
+      <tr><td><code>code_blast</code> / <code>code_flow</code></td><td><span class="sc r">R</span></td><td></td><td>传递调用者（爆炸半径）/ 执行链 + sink 标注</td></tr>
+      <tr><td><code>code_traversal_cache_clear</code></td><td><span class="sc a">A</span></td><td>✎ <span class="lo">LOCAL</span></td><td>清 code_blast/flow 遍历缓存</td></tr>
+      <tr><td><code>get_active_schema_pack</code> / <code>list_schema_packs</code></td><td><span class="sc r">R</span></td><td></td><td>活跃/已装 schema pack</td></tr>
+      <tr><td><code>schema_stats</code> / <code>schema_lint</code> / <code>schema_graph</code></td><td><span class="sc r">R</span></td><td></td><td>覆盖统计 / 校验 / 图</td></tr>
+      <tr><td><code>schema_explain_type</code> / <code>schema_review_orphans</code></td><td><span class="sc r">R</span></td><td></td><td>类型解析 / 孤儿页</td></tr>
+      <tr><td><code>schema_apply_mutations</code></td><td><span class="sc a">A</span></td><td>✎</td><td>原子批量 schema 变更</td></tr>
+      <tr><td><code>reload_schema_pack</code></td><td><span class="sc a">A</span></td><td></td><td>刷新进程内 schema pack 缓存</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>Jobs / Minions · Sources · 管理 / 健康 / 同步</h4>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Operation</th><th>Scope</th><th>标志</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>submit_job</code></td><td><span class="sc a">A</span></td><td>✎</td><td>提交后台作业（sync/embed/lint/import/extract/...）</td></tr>
+      <tr><td><code>submit_agent</code></td><td><span class="sc ag">AG</span></td><td>✎</td><td>经网关工具循环提交 LLM Agent 作业（OAuth 绑定）</td></tr>
+      <tr><td><code>get_job</code> / <code>list_jobs</code> / <code>get_job_progress</code></td><td><span class="sc a">A</span></td><td></td><td>作业状态 / 列表 / 进度</td></tr>
+      <tr><td><code>cancel_job</code> / <code>retry_job</code> / <code>pause_job</code> / <code>resume_job</code> / <code>replay_job</code></td><td><span class="sc a">A</span></td><td>✎*</td><td>取消 / 重试 / 暂停 / 恢复 / 重放</td></tr>
+      <tr><td><code>send_job_message</code></td><td><span class="sc a">A</span></td><td></td><td>向运行中作业 inbox 发侧信道消息</td></tr>
+      <tr><td><code>sources_add</code> / <code>sources_remove</code></td><td><span class="sc sa">SA</span></td><td>✎</td><td>注册 / 硬删源（可联邦远程克隆）</td></tr>
+      <tr><td><code>sources_list</code> / <code>sources_status</code></td><td><span class="sc r">R</span></td><td></td><td>列源 + 计数 / 单源诊断</td></tr>
+      <tr><td><code>get_stats</code> / <code>get_health</code></td><td><span class="sc a">A</span></td><td></td><td>大脑统计 / 健康看板</td></tr>
+      <tr><td><code>run_doctor</code> / <code>get_status_snapshot</code></td><td><span class="sc a">A</span></td><td></td><td>健康检查 / 状态快照（thin-client 可远程）</td></tr>
+      <tr><td><code>get_brain_identity</code> / <code>whoami</code></td><td><span class="sc r">R</span></td><td></td><td>大脑身份计数 / 调用者身份内省</td></tr>
+      <tr><td><code>get_versions</code> / <code>revert_version</code></td><td><span class="sc r">R</span>/<span class="sc w">W</span></td><td>✎</td><td>页面版本史 / 回滚</td></tr>
+      <tr><td><code>find_orphans</code></td><td><span class="sc r">R</span></td><td></td><td>找无入链页面</td></tr>
+      <tr><td><code>sync_brain</code></td><td><span class="sc a">A</span></td><td>✎ <span class="lo">LOCAL</span></td><td>同步 git 仓库到大脑（增量、可恢复）</td></tr>
+      <tr><td><code>put_raw_data</code> / <code>get_raw_data</code></td><td><span class="sc w">W</span>/<span class="sc r">R</span></td><td>✎</td><td>存/取页面原始 API 数据</td></tr>
+      <tr><td><code>resolve_slugs</code> / <code>get_chunks</code></td><td><span class="sc r">R</span></td><td></td><td>模糊解析 slug / 取页面 chunk</td></tr>
+      <tr><td><code>log_ingest</code> / <code>get_ingest_log</code></td><td><span class="sc w">W</span>/<span class="sc r">R</span></td><td>✎</td><td>记/取摄取日志</td></tr>
+      <tr><td><code>file_list</code> / <code>file_upload</code> / <code>file_url</code></td><td><span class="sc a">A</span></td><td>✎* <span class="lo">LOCAL</span></td><td>文件列表 / 上传（路径限制随信任）/ URL</td></tr>
+      <tr><td><code>run_onboard</code> / <code>run_skillopt</code></td><td><span class="sc a">A</span></td><td>✎</td><td>健康探针+修复 / SkillOpt 优化单技能</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="note"><div class="t">8 个 localOnly op（远程结构性排除）</div>
+    <code>purge_deleted_pages</code> · <code>sync_brain</code> · <code>file_list</code> · <code>file_upload</code> · <code>file_url</code> · <code>get_recent_transcripts</code> · <code>code_traversal_cache_clear</code> · <code>chronicle_backfill</code>。另有 3 个显式 <code>localOnly:false</code>（表明远程 Agent 可调）：<code>run_doctor</code> · <code>get_status_snapshot</code> · <code>run_skillopt</code>。</div>
+</section>
+
+<!-- ============================================================= -->
+<!-- APPENDIX — DREAM CYCLE -->
+<!-- ============================================================= -->
+<section id="dreamcycle">
+  <h2 class="sh"><span class="num">↻</span>附录 A · Dream Cycle 守护进程</h2>
+  <p class="lead">Dream Cycle 是 GBrain 的 24×7 自我增强引擎（<code>src/core/cycle.ts</code>）——夜间自动摄取、增强、整合，让大脑「保持锋利」。<code>ALL_PHASES</code> 定义了完整的相位流水线，按依赖顺序调度。</p>
+  <figure>
+    <div class="mermaid">
+flowchart TB
+  lint["lint --fix<br/>(文件系统)"] --> backlinks["backlinks --fix"]
+  backlinks --> sync["sync<br/>(DB 拾取 phase 1+2)"]
+  sync --> synth["synthesize<br/>转录→页面"]
+  synth --> extract["extract<br/>抽链接"]
+  extract --> ef["extract_facts<br/>协调 Facts fence"]
+  ef --> ea["extract_atoms<br/>(pack-gated)"]
+  ea --> rse["resolve_symbol_edges<br/>符号边解析"]
+  rse --> patterns["patterns<br/>跨会话主题"]
+  patterns --> sc["synthesize_concepts"]
+  sc --> rew["recompute_emotional_weight"]
+  rew --> cons["consolidate<br/>facts→takes 聚类"]
+  cons --> pt["propose_takes"]
+  pt --> gt["grade_takes"]
+  gt --> cp["calibration_profile<br/>voice-gated"]
+  cp --> cfb["conversation_facts_backfill<br/>(opt-in)"]
+  cfb --> et["enrich_thin<br/>发育 stub 页"]
+  et --> embed["embed --stale"]
+  embed --> orphans["orphans (只读报告)"]
+    </div>
+    <figcaption>图 A.1 — Dream Cycle 相位流水线：从文件系统清理 → 同步 → 抽取 → 合成 → 整合 → 校准 → 嵌入，每相位顺序依赖前者的新鲜状态</figcaption>
+  </figure>
+  <p>相位有<strong>作用域分类</strong>（<code>PHASE_SCOPE</code>）：<code>source</code>（每源）、<code>global</code>（全脑，如 embed/orphans）、<code>mixed</code>。每源 autopilot 只跑 source+mixed 相位，global 相位全脑跑一次。写相位（sync/extract/embed）需 per-source 锁并在相位间 <code>yieldBetweenPhases</code>（穿越 PgBouncer）。预算上限在 <code>budget-meter.ts</code>。相位状态 <code>ok|warn|fail|skipped</code>，本 fork 为 <code>CycleRow</code> 增 <code>phases</code> 字段供 DreamCycleCard 展示各相位耗时。</p>
+  <div class="note p"><div class="t">校准三相位（Hindsight wave）</div>
+    <code>propose_takes</code>（在 consolidate 后，看到刚整合的 takes 决定还没捕获什么）→ <code>grade_takes</code>（新接受的提案下一 cycle 可评级；<strong>不自动接受</strong>，用户总是审阅）→ <code>calibration_profile</code>（读新鲜解析，voice-gated 叙述，Haiku 裁判便宜）。</div>
+</section>
+
+<!-- ============================================================= -->
+<!-- APPENDIX — GLOSSARY / FILE INDEX -->
+<!-- ============================================================= -->
+<section id="glossary">
+  <h2 class="sh"><span class="num">☰</span>附录 B · 术语与关键文件索引</h2>
+
+  <h3>核心术语速查 <span class="anchor">#</span></h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>术语</th><th>含义</th></tr></thead>
+    <tbody>
+      <tr><td><b>Contract-first</b></td><td><code>operations.ts</code> 单源，CLI + MCP 运行时生成，无代码生成步骤</td></tr>
+      <tr><td><b>Brain / Source</b></td><td>Brain=哪个 DB；Source=DB 内哪个仓库。slug 唯一性 = (source_id, slug)</td></tr>
+      <tr><td><b>Trust boundary</b></td><td><code>ctx.remote</code>：false=可信本地；非 false=不可信远程（fail-closed）</td></tr>
+      <tr><td><b>RRF</b></td><td>Reciprocal Rank Fusion，<code>1/(k+rank)</code>，k=60，多召回臂融合</td></tr>
+      <tr><td><b>knobs_hash</b></td><td>把所有影响结果的 knob 折进缓存 key（v12），防跨模式污染</td></tr>
+      <tr><td><b>Take</b></td><td>类型化/加权/署名的断言（fact/take/bet/hunch），用于校准</td></tr>
+      <tr><td><b>Fact / 热记忆</b></td><td>按源的双时序个人知识事实（extract_facts/recall/forget）</td></tr>
+      <tr><td><b>Compiled Truth</b></td><td>把冲突页面 LLM 合并为一份权威正文（find_conflicts→compile→adopt）</td></tr>
+      <tr><td><b>Minion / Lane</b></td><td>后台作业；执行通道 shell/subagent/handler</td></tr>
+      <tr><td><b>Dream Cycle</b></td><td>24×7 自增强相位流水线</td></tr>
+      <tr><td><b>Chronicle / Ontology</b></td><td>会话→类型化事件；实体维度→值的双时序本体</td></tr>
+      <tr><td><b>Schema pack</b></td><td>可插拔的页面类型/链接类型/抽取规则</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>关键文件索引 <span class="anchor">#</span></h3>
+  <div class="grid2">
+    <div class="card">
+      <h4>契约 & 传输</h4>
+      <ul>
+        <li><code>src/core/operations.ts</code> — 113 op 契约（接口 L648-678，注册 L5984-6077）</li>
+        <li><code>src/core/scope.ts</code> — scope 层级</li>
+        <li><code>src/mcp/dispatch.ts</code> — 统一分发漏斗</li>
+        <li><code>src/mcp/tool-defs.ts</code> — buildToolDefs</li>
+        <li><code>src/mcp/server.ts</code> — stdio MCP</li>
+        <li><code>src/mcp/http-transport.ts</code> — legacy bearer</li>
+        <li><code>src/commands/serve-http.ts</code> — OAuth + admin 代理</li>
+        <li><code>src/cli.ts</code> — CLI 生成 + 分发</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>检索 & 图谱</h4>
+      <ul>
+        <li><code>src/core/search/hybrid.ts</code> — 混合检索编排（RRF L1867）</li>
+        <li><code>src/core/search/mode.ts</code> — MODE_BUNDLES / knobs_hash</li>
+        <li><code>src/core/search/query-cache.ts</code> — 语义缓存</li>
+        <li><code>src/core/search/relational-recall.ts</code> — 第 4 臂</li>
+        <li><code>src/core/link-extraction.ts</code> — 零 LLM 链接抽取</li>
+        <li><code>src/core/by-mention.ts</code> — NER gazetteer</li>
+        <li><code>src/core/code-intel/</code> — 代码图 BFS</li>
+        <li><code>src/core/chronicle/</code> — 事件/本体</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>引擎 & 存储</h4>
+      <ul>
+        <li><code>src/core/engine.ts</code> — BrainEngine 接口</li>
+        <li><code>src/core/engine-factory.ts</code> — 动态引擎选择</li>
+        <li><code>src/core/pglite-engine.ts</code> / <code>postgres-engine.ts</code></li>
+        <li><code>src/schema.sql</code> — baseline schema</li>
+        <li><code>src/core/migrate.ts</code> — 迁移运行器（v124）</li>
+        <li><code>src/core/minions/</code> — 任务队列</li>
+        <li><code>src/core/cycle.ts</code> — Dream Cycle</li>
+        <li><code>src/core/ai/recipes/</code> — 18 provider</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>前端 & 文档</h4>
+      <ul>
+        <li><code>admin/src/App.tsx</code> / <code>routes.ts</code> — hash 路由 + 双表层</li>
+        <li><code>admin/src/api.ts</code> — Tier1 REST</li>
+        <li><code>admin/src/lib/mcp-client.ts</code> — Tier3 MCP 双通道</li>
+        <li><code>admin/src/components/brain/ForceGraph.tsx</code> — 图谱可视化</li>
+        <li><code>src/admin-embedded.ts</code> — 二进制嵌入产物</li>
+        <li><code>CLAUDE.md</code> — 架构与不变量</li>
+        <li><code>CUSTOM.md</code> — 二开记录</li>
+        <li><code>DESIGN.md</code> — 设计系统与声音</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="footer">
+    <hr/>
+    <p><strong>GBrain 技术全景报告</strong> · 基于仓库 <code>v0.42.62.0</code>（分支 <code>custom/main</code>）源码逐一核对生成。图表由 <code>mermaid@11</code> 渲染。本报告覆盖 11 个核心模块 + Dream Cycle & 术语两个附录，配 20+ Mermaid/SVG 图表。</p>
+    <p style="color:var(--muted);font-size:12px">说明：所示行号基于研究时的源码快照，随版本演进可能偏移，请以当前仓库为准。「gbrain 最好」是整系统命题，由完整 BrainBench 套件证明，而非任一单点特性。</p>
+  </div>
+</section>
+
+</main>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'neutral',
+    themeVariables: {
+      fontFamily: "'Inter','PingFang SC','Microsoft YaHei',sans-serif",
+      primaryColor: '#e8f0ff',
+      primaryBorderColor: '#3b6df5',
+      primaryTextColor: '#1e2430',
+      lineColor: '#6b7688',
+      fontSize: '13px'
+    },
+    flowchart: { curve: 'basis', htmlLabels: true, padding: 12 },
+    sequence: { useMaxWidth: true, wrap: true },
+    er: { useMaxWidth: true }
+  });
+  // 平滑高亮当前 TOC 项
+  const links = [...document.querySelectorAll('.toc a')];
+  const map = new Map(links.map(a => [a.getAttribute('href').slice(1), a]));
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        links.forEach(a => a.style.background = '');
+        const a = map.get(e.target.id);
+        if (a) a.style.background = 'var(--accent-soft)';
+      }
+    });
+  }, { rootMargin: '-10% 0px -80% 0px' });
+  document.querySelectorAll('section[id]').forEach(s => obs.observe(s));
+</script>
+</body>
+</html>

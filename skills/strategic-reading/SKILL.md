@@ -1,3 +1,5 @@
+> **Convention:** see [conventions/brain-first.md](../conventions/brain-first.md) for the lookup chain (search → query → get_page → external).
+
 ---
 name: strategic-reading
 version: 0.1.0

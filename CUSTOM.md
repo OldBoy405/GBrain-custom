@@ -7,10 +7,18 @@
 | 官方仓库 | https://github.com/garrytan/gbrain |
 | 二开仓库 | https://github.com/OldBoy405/GBrain-custom |
 | 主开发分支 | `custom/main` |
+| 当前对齐上游 | **v0.42.62.0** tip `f72de979`（含正式 release 之后的若干 feat） |
 | 产品名 | （待填写） |
 | 是否对外分发 | （是/否，待填写） |
-| 上次提交 | `5a57912`（2026-07-07 16:33，`Merge upstream/master`） |
-| 工作区状态（截至 2026-07-11） | 已跟踪 24 文件（+1478/−286）；未跟踪 ~116 文件（主要在 `admin/`） |
+| HEAD | `45d46fd1`（2026-07-18 20:03，`合并上游更新`；parents: `1d74f822` + `f72de979`） |
+| 工作区状态（截至 2026-07-18） | **干净**（相对 `origin/custom/main` 无未提交改动） |
+
+**近期关键本地提交：**
+
+| Commit | 说明 |
+|--------|------|
+| `1d74f822` | `feat(custom): Graph概览/Ask/NewCapture/Jobs队列 + graph_overview 后端` |
+| `45d46fd1` | 合并上游 `upstream/master`（自 v0.42.58.0 → tip） |
 
 ---
 
@@ -32,13 +40,13 @@
 
 ### 上游改动清单
 
-#### A. 已提交（2026-07-03 ~ 07-04，在 `5a57912` 之前）
+#### A. 已提交（2026-07-03 ~ 07-04；Ollama / DeepSeek）
 
 | 日期 | 文件 / 符号位置 | 改动摘要 | 改动原因 | 冲突整合原则 |
 |------|----------------|----------|----------|--------------|
 | 2026-07-03 | `src/core/ai/dims.ts` · `dimsProviderOptions()` | 新增可选第 5 参 `providerId`；`providerId==='ollama'` 时对任意模型返回 `{ openaiCompatible: { dimensions } }` | 本机 Ollama embed 需显式传 dimensions，上游默认路径不覆盖 | 保留 5 参签名与 Ollama 分支；上游若改 embed 维度逻辑，在合并后的函数体末尾保留 Ollama 特例 |
 | 2026-07-03 | `src/core/ai/gateway.ts` · `embed()` | 调用 `dimsProviderOptions(...)` 时传入 `recipe.id` | 把 recipe 身份传给 dims，才能触发 Ollama 特例 | 保留 `recipe.id` 传参；其余 embed 路径以上游为准 |
-| 2026-07-03 | `src/core/embedding-dim-check.ts` · `isCustomDimValidForProvider()` | 放行 Ollama 及 `user_provided_models` recipe 的显式自定义维度 | 避免 doctor/init 把合法自定义维度判为非法 | 保留放行规则；上游若新增 provider 校验分支，与之并列不互斥 |
+| 2026-07-03 | `src/core/embedding-dim-check.ts` · `isCustomDimValidForProvider()` | 放行 Ollama 及 `user_provided_models` recipe 的显式自定义维度 | 避免 doctor/init 把合法自定义维度判为非法 | 保留放行规则；与上游 `trust_custom_dims` 并列不互斥（见 2026-07-11 合并记录） |
 | 2026-07-03 | `test/ai/gateway.test.ts` | Ollama 维度传参 + `providerId` 向后兼容用例 | 锁住 Ollama 维度与向后兼容行为 | 测试文件：两边用例都保留 |
 | 2026-07-03 | `test/embedding-dim-check.test.ts` | Ollama / llama-server / litellm 维度用例 | 锁住本机/代理 provider 的维度放行规则 | 同上 |
 | 2026-07-04 | `src/core/config.ts` · `deepseek_api_key` | 文件平面字段 + `DEEPSEEK_API_KEY` env + `KNOWN_CONFIG_KEYS` 注册 | 接入 DeepSeek 作为可选 Chat/Expansion provider | 保留字段注册行；上游新增 key 时一并注册，不删 DeepSeek |
@@ -47,14 +55,16 @@
 | 2026-07-04 | `src/core/model-pricing.ts` | 登记 `deepseek-v4-flash` / `deepseek-v4-pro` | 成本估算/eval 需要定价行，且定价唯一真源在此 | 保留定价行；定价以本文件为唯一真源，不手抄到别处 |
 | 2026-07-04 | `test/ai/build-gateway-config.test.ts` 等 | DeepSeek config / expansion / 定价回归 | 锁住 DeepSeek 接线与定价不漂移 | 两边用例都保留 |
 
-#### B. 未提交（2026-07-08 ~ 07-11，在 `5a57912` 之后）
+#### B. 已提交（2026-07-08 ~ 07-11；Inbox / 真理 / Jobs / Query / Admin 代理）
+
+> 曾标注「未提交」——截至 2026-07-18 已全部在 `custom/main` 上（Inbox/真理等随此前提交合入；Graph 与 Ask/Jobs/NewCapture 深化见 `1d74f822`）。
 
 | 日期 | 文件 / 符号位置 | 改动摘要 | 改动原因 | 冲突整合原则 |
 |------|----------------|----------|----------|--------------|
 | 2026-07-09 | `src/commands/serve-http.ts` · `mcpOperations` | 上提 `operations.filter(!localOnly)`，`/mcp` 与 `/admin/api/op` 共用 | Admin cookie 代理与 `/mcp` 共用同一 op 白名单，避免两处 filter 漂移 | 保留上提后的单一来源；上游若改 filter 条件，合并条件后仍共用 |
 | 2026-07-09 | `src/commands/serve-http.ts` · `CUSTOM ADMIN ROUTES` | 新增 `POST /admin/api/op`（cookie `requireAdmin`→`dispatchToolCall`，响应 `{result:ToolResult}`） | Brain SPA 用 cookie 调 MCP op，无需把 Bearer 写进 localStorage | **整块保留** BEGIN/END 标记内代码；上游路由追加后 CUSTOM 块贴末尾 |
 | 2026-07-08~11 | `src/core/inbox.ts` · **新文件** | Inbox 投影/状态：`pageToInboxItem`、`prepareInboxCaptureContent`、`patchInboxFrontmatter` 等 | Brain Inbox 页需要专用投影与 frontmatter 状态机 | 新文件无冲突；直接保留 |
-| 2026-07-08~11 | `src/core/types.ts` · `INBOX_STATUSES` / `INboxItem` / `InboxDetail` | `PageFilters` 之后追加 inbox 类型块 | 前后端/op 共用 inbox 类型契约 | 保留类型块；上游若在相邻位置加类型，顺序上 inbox 块不删 |
+| 2026-07-08~11 | `src/core/types.ts` · `INBOX_STATUSES` / `InboxItem` / `InboxDetail` | `PageFilters` 之后追加 inbox 类型块 | 前后端/op 共用 inbox 类型契约 | 保留类型块；上游若在相邻位置加类型，顺序上 inbox 块不删 |
 | 2026-07-08~11 | `src/core/migrate.ts` · `inbox_workflow_frontmatter` | 回填存量 `inbox/*` 页的 `inbox_status` / `inbox_legacy_source` | 存量 inbox 页缺状态字段，升级后列表/过滤才能工作 | 保留 migration 条目；**注意 version 序号**不与上游新 migration 撞号，必要时改序号 |
 | 2026-07-08~11 | `src/core/operations.ts` · `list_inbox` / `get_inbox_item` / `trigger_inbox_enrichment` / `discard_inbox_items` | 4 个新 op，插在 `list_pages` 与 `search` 之间 | Admin Inbox 工作流（列表/详情/enrich/丢弃）需要契约化 op | 整段 op 定义保留；上游同位置新增 op 时按逻辑顺序并列，导出数组也要注册 |
 | 2026-07-08~11 | `src/core/operations.ts` · `find_conflicts` / `compile_truth` / `adopt_compiled_truth` | 真理沉淀 3 op + 导出数组注册 | Synthesize 页「找矛盾→编译真理→采纳」工作台需要后端 op | 整段保留；`compile_truth` handler 依赖 `compile-truth.ts`，合并后确认 import 仍在 |
@@ -74,46 +84,52 @@
 | 2026-07-08~11 | `test/conflicts.test.ts` · **新文件** | `groupConflicts` 纯函数测试 | 锁住矛盾分组算法 | 新文件保留 |
 | 2026-07-08~11 | `test/compile-truth.test.ts` · **新文件** | `compileTruth` / `parseCompileJSON` 测试 | 锁住真理编译与 JSON 解析 | 新文件保留 |
 | 2026-07-08~11 | `test/ingestion/ingest-capture.test.ts` | inbox slug 捕获路径用例扩展 | 锁住 inbox 捕获分支 | 保留 inbox 用例；上游用例不删 |
-| 2026-07-14 | `src/core/operations.ts` · `traverse_graph` | 新增可选 `node_limit`（默认300，顶2000）/`frontier_cap`（默认200，顶1000，传0禁用）；`node_limit` 接线两引擎（后置稳定切片，因两引擎均已 `ORDER BY depth,slug`）；`frontier_cap` 透传给 `traverseGraph`/`traversePaths` | Graph 页防超大 hub/深 walk 把浏览器或 DB 打爆；默认收紧规模 | 保留两参数与切片逻辑；未传新参数时行为与旧版等价（node_limit 默认 300 会截断超大 hub，属故意的默认收紧——**若下游有依赖大结果集的调用方，需知会**）；上游若改返回形状，切片挪到新返回点 |
-| 2026-07-14 | `src/core/engine.ts` · `traversePaths` 接口签名 | opts 新增可选 `frontierCap?: number`（`TraverseGraphOpts.frontierCap` 本是上游 v0.36+ 已有能力，仅为 `traversePaths` 补齐同款） | `traverse_graph` 的 `frontier_cap` 需能作用到路径遍历 API | 保留该字段；不影响未传该参的既有调用方 |
-| 2026-07-14 | `src/core/pglite-engine.ts` · `traversePaths()` | out/in/both 三分支：①递归项加 `frontierCap`（`ORDER BY p2.slug,p2.id LIMIT`包裹，无设时原样直通）；②最终 SELECT 补 `to_title`/`to_type`（in 方向另 `JOIN pages wp ON wp.id = w.id` 取 walk 节点自身元数据） | Graph 力导向需要目标节点 title/type；路径 walk 需广度护栏 | 保留 wrapRec 包裹与新增列；上游若重写函数体，把这两处改动重新贴回三个分支 |
-| 2026-07-14 | `src/core/postgres-engine.ts` · `traversePaths()` | 同 pglite-engine 语义，用 `sql` 标签模板拼接（`ReturnType<typeof sql>` 做参数类型会退化成 overload 签名报错，改成内联三元 `capped ? sql\`(${step} ORDER BY … LIMIT ${cap})\` : step`） | 与 pglite 锁步，保证两引擎 Graph 行为一致 | 保留三处内联写法；两引擎必须锁步改动（`test/e2e/engine-parity.test.ts` DATABASE_URL 门控兜底，本地默认 skip） |
-| 2026-07-14 | `src/core/types.ts` · `GraphPath` | 新增可选字段 `to_title?`/`to_type?` | 前端画边/节点标签需要路径目标元数据，避免再逐条 get_page | 保留可选字段；未升级的调用方/测试不受影响 |
-| 2026-07-14 | `test/traverse-paths-metadata.test.ts` · **新文件** | to_title/to_type 三方向回归 + frontierCap 深度2场景下的广度收敛断言（PGLite） | 锁住路径元数据与 frontier 广度语义 | 新文件保留；语义要点：`frontierCap` 限的是**递归 walk 广度**（深层遍历成本），不限 seed 自身直接出边数——那是 `node_limit` 的职责，测试按此断言 |
-| 2026-07-14 | `src/core/operations.ts` · `graph_overview` · **新 op** | 无根全量概览：返回度数 top-N 页面 + 其间所有边（`GraphNode[]`，与 traverseGraph 同形状）。参数 `node_limit`（默认500/顶2000）/`edge_limit`（默认1500/顶5000，op 层裁边）；源隔离经 `sourceScopeOpts`。已注册进导出数组（`…traverse_graph, graph_overview,`） | Graph 页默认需要「无根骨架」总览，不能只靠有根 traverse | 整段 op + 注册行保留；上游同位置加 op 时按逻辑顺序并列；返回形状复用 GraphNode，无需新类型 |
-| 2026-07-14 | `src/core/engine.ts` · `graphOverview` 接口 | `BrainEngine` 新增 `graphOverview(opts?)` 方法签名 | 契约层声明 `graph_overview` 的引擎方法 | 保留签名；仅 pglite/postgres 两实现类需同步（无其他 implementer） |
-| 2026-07-14 | `src/core/pglite-engine.ts` / `src/core/postgres-engine.ts` · `graphOverview()` · **新方法** | 锁步实现：`deg` CTE（`GROUP BY` 一次算全库度数，非逐页相关子查询）→ `top_nodes`（`deleted_at IS NULL` + 源隔离 + `ORDER BY deg DESC, slug ASC LIMIT`）→ 各 top 节点仅聚合指向**其他 top 节点**的出边（自洽骨架）。`depth` 恒 0 | 高效算出度数 top-N 自洽子图，供 Graph 默认渲染 | 两引擎必须锁步；边聚合不需单独源过滤（两端点均约束在已 scoped 的 top_nodes 内）；`engine-parity` DATABASE_URL 门控兜底 |
-| 2026-07-14 | `test/graph-overview.test.ts` · **新文件** | 度数排序 + node_limit + 边只在返回集内 + 软删除排除（PGLite） | 锁住 graph_overview 排序/裁剪/软删语义 | 新文件保留 |
 
-#### C. 根目录脚本（非 `src/` 但影响上游构建链）
+#### C. 已提交（2026-07-14 ~ 07-17；Graph / path-confine；`1d74f822`）
 
 | 日期 | 文件 / 符号位置 | 改动摘要 | 改动原因 | 冲突整合原则 |
 |------|----------------|----------|----------|--------------|
-| 2025-06-25 | `package.json` · `postinstall` | bash 内联 → `bun run scripts/postinstall.ts` | Windows 无 bash，内联 shell 在本机安装失败 | 保留 ts 脚本引用；上游 postinstall 追加时两步都跑或合并为 ts |
-| 2025-06-25 | `scripts/postinstall.ts` · **新文件** | 跨平台 postinstall（Windows 兼容） | 用 Bun/TS 实现跨平台 postinstall，替代 bash | 新文件保留；上游若改 postinstall 逻辑，迁入 ts 脚本 |
+| 2026-07-14 | `src/core/operations.ts` · `traverse_graph` | 新增可选 `node_limit`（默认300，顶2000）/`frontier_cap`（默认200，顶1000，传0禁用）；`node_limit` 接线两引擎；`frontier_cap` 透传 | Graph 页防超大 hub/深 walk 打爆浏览器或 DB | 保留两参数与切片逻辑；未传新参数时行为与旧版等价（默认 300 属故意收紧）；上游若改返回形状，切片挪到新返回点 |
+| 2026-07-14 | `src/core/engine.ts` · `traversePaths` 接口 | opts 新增可选 `frontierCap?: number` | `frontier_cap` 需作用到路径遍历 API | 保留该字段；不影响未传该参的既有调用方 |
+| 2026-07-14 | `src/core/pglite-engine.ts` · `traversePaths()` | ①递归项加 `frontierCap`；②最终 SELECT 补 `to_title`/`to_type` | Graph 力导向需要目标节点 title/type；路径 walk 需广度护栏 | 保留 wrapRec 与新增列；上游重写函数体时把两处改动贴回三分支 |
+| 2026-07-14 | `src/core/postgres-engine.ts` · `traversePaths()` | 同 pglite 语义（内联三元 `sql` 拼接） | 两引擎锁步 | 保留内联写法；`engine-parity` DATABASE_URL 门控兜底 |
+| 2026-07-14 | `src/core/types.ts` · `GraphPath` | 新增可选 `to_title?`/`to_type?` | 前端画边/标签，避免再逐条 `get_page` | 保留可选字段 |
+| 2026-07-14 | `src/core/operations.ts` · `graph_overview` · **新 op** | 无根全量概览：度数 top-N + 其间边；`node_limit`/`edge_limit`；源隔离 | Graph 默认需要无根骨架，不能只靠有根 traverse | 整段 op + 注册行保留；返回形状复用 `GraphNode` |
+| 2026-07-14 | `src/core/engine.ts` · `graphOverview` | `BrainEngine` 新方法签名 | 契约层声明 | 仅 pglite/postgres 两实现需同步 |
+| 2026-07-14 | 两引擎 · `graphOverview()` · **新方法** | `deg` CTE → `top_nodes` → 自洽出边 | 高效度数 top-N 子图 | 两引擎锁步 |
+| 2026-07-14 | `test/traverse-paths-metadata.test.ts` / `test/graph-overview.test.ts` · **新文件** | 元数据 + frontier + overview 回归 | 锁住 Graph 后端语义 | 新文件保留 |
+| 2026-07-16 | `src/core/path-confine.ts` · `isPathContained()` | 分隔符改用 `path.sep` | Windows 上父子路径误判「不包含」（见「我修复的上游 Bug」） | 保留 `path.sep`；上游若改 confinement 逻辑，合并后复测 Windows |
+
+#### D. 根目录脚本（历史；上游已吸收同款）
+
+| 日期 | 文件 / 符号位置 | 改动摘要 | 改动原因 | 冲突整合原则 |
+|------|----------------|----------|----------|--------------|
+| 2025-06-25 | `package.json` · `postinstall` + `scripts/postinstall.ts` | bash 内联 → `bun run scripts/postinstall.ts` | Windows 无 bash | **上游 #1554（v0.42.62 波次）已落地同款跨平台 postinstall**。合并时以上游 ts 脚本为准，勿叠两套；本条目仅作历史记录 |
 
 ---
 
 ### 上游改动按主题索引
 
-| 主题 | 涉及文件 | 首次日期 |
-|------|----------|----------|
-| Ollama 自定义 embed 维度 | `dims.ts`、`gateway.ts`、`embedding-dim-check.ts` + tests | 2026-07-03 |
-| DeepSeek provider | `config.ts`、`build-gateway-config.ts`、`recipes/deepseek.ts`、`model-pricing.ts` + tests | 2026-07-04 |
-| Admin cookie MCP 代理 | `serve-http.ts`（CUSTOM 区块） | 2026-07-09 |
-| Inbox 入库工作流 | `inbox.ts`、`types.ts`、`migrate.ts`、`operations.ts`×4、`inbox-enrich.ts`、`ingest-capture.ts`、`jobs.ts` + tests | 2026-07-08~11 |
-| 真理沉淀 Compiled Truth | `conflicts.ts`、`compile-truth.ts`、`operations.ts`×3、`json-repair.ts` + tests | 2026-07-08~11 |
-| Jobs 执行通道 | `execution-lane.ts`、`operations.ts`（list/get job） | 2026-07-11 |
-| Dream Cycle phase 耗时 | `status.ts` | 2026-07-11 |
-| Query 检索诊断 | `operations.ts`（query）、`cli.ts` | 2026-07-11 |
-| Graph 页规模护栏 + 路径元数据 | `operations.ts`（traverse_graph）、`engine.ts`、`pglite-engine.ts`、`postgres-engine.ts`、`types.ts` + test | 2026-07-14 |
-| Graph 页无根全量概览（graph_overview） | `operations.ts`（graph_overview）、`engine.ts`、`pglite-engine.ts`、`postgres-engine.ts` + test；前端 `admin/src/pages/brain/Graph.tsx` 尺寸自适应默认渲染 | 2026-07-14 |
+| 主题 | 涉及文件 | 首次日期 | 状态 |
+|------|----------|----------|------|
+| Ollama 自定义 embed 维度 | `dims.ts`、`gateway.ts`、`embedding-dim-check.ts` + tests | 2026-07-03 | 已提交；与上游 `trust_custom_dims` 并存 |
+| DeepSeek provider | `config.ts`、`build-gateway-config.ts`、`recipes/deepseek.ts`、`model-pricing.ts` + tests | 2026-07-04 | 已提交 |
+| Admin cookie MCP 代理 | `serve-http.ts`（CUSTOM 区块） | 2026-07-09 | 已提交 |
+| Inbox 入库工作流 | `inbox.ts`、`types.ts`、`migrate.ts`、`operations.ts`×4、`inbox-enrich.ts`、`ingest-capture.ts`、`jobs.ts` + tests | 2026-07-08~11 | 已提交 |
+| 真理沉淀 Compiled Truth | `conflicts.ts`、`compile-truth.ts`、`operations.ts`×3、`json-repair.ts` + tests | 2026-07-08~11 | 已提交 |
+| Jobs 执行通道 | `execution-lane.ts`、`operations.ts`（list/get job） | 2026-07-11 | 已提交 |
+| Dream Cycle phase 耗时 | `status.ts` | 2026-07-11 | 已提交 |
+| Query 检索诊断 | `operations.ts`（query）、`cli.ts` | 2026-07-11 | 已提交 |
+| Graph 规模护栏 + 路径元数据 + `graph_overview` | `operations.ts`、`engine.ts`、两引擎、`types.ts` + tests | 2026-07-14 | 已提交（`1d74f822`） |
+| Windows `path-confine` | `path-confine.ts` | 2026-07-16 | 已提交（`1d74f822`） |
+| 跨平台 postinstall | `scripts/postinstall.ts` | 2025-06-25 | **上游已吸收**（#1554） |
 
 ---
 
-## Admin 前端改动（`admin/` only，fork-safe）
+## Admin 前端改动（`admin/` only，fork-safe 为主）
 
-> **原则**：所有 Brain 功能默认 **零上游改动**；仅通过既有 op / Tier1 REST / cookie 代理消费后端。依赖只进 `admin/package.json`。
+> **原则**：所有 Brain 功能默认 **零上游改动**；仅通过既有 op / Tier1 REST / cookie 代理消费后端。依赖只进 `admin/package.json`。  
+> **例外（non-fork-safe）**：`graph_overview` / `traverse_graph` 护栏等后端改动见上节 C；前端 Graph/Ask 消费这些 op。
 
 ### 架构
 
@@ -142,10 +158,11 @@
 | 2026-07-08~11 | Why? 按钮 | 12 topic × `WhyProvider`/`WhyPanel`/`WhyButton` |
 | 2026-07-08~11 | 三大范式 | `ThreeParadigms.tsx` 静态对照页 |
 | 2026-07-08~11 | 文档 | `FRONTEND_PLAN.zh.md`、8×`*_COMPARISON.zh.md`、`INBOX_API.zh.md`、`admin/CLAUDE.md` 等 |
+| 2026-07-14~17 | Graph / Ask / Jobs / NewCapture（`1d74f822`） | `graph_overview` 默认骨架；Ask 深化；`NewCaptureDialog`；Jobs 队列 `allSettled`/退避/栏标题澄清；`graph-cache`；DreamCycle phases 拆分 |
 
 ### 组件库（`admin/src/components/brain/`）
 
-`PageHeader`、`StatCard`、`Badge`、`StatusPill`、`Drawer`、`AsyncState`、`McpConnect`、`ErrorBoundary`、`BrainTopBar`、`JobQueueColumns`、`DreamCycleCard`、`EnrichmentPipeline`、`EnrichmentDiff`、`InboxCard`/`InboxDetail`/`InboxDiscardDialog`、`PipelineSteps`、`TraceWaterfall`、`ForceGraph`、`TypedLinkTable`/`TypedLinkDemo`、`SkillDetailDrawer` 等（30+，统一 `index.tsx` 导出）。
+`PageHeader`、`StatCard`、`Badge`、`StatusPill`、`Drawer`、`AsyncState`、`McpConnect`、`ErrorBoundary`、`BrainTopBar`、`JobQueueColumns`、`JobsQueueSection`、`DreamCycleCard`、`DreamCyclePipeline`、`EnrichmentPipeline`、`EnrichmentDiff`、`InboxCard`/`InboxDetail`/`InboxDiscardDialog`、`NewCaptureDialog`、`PipelineSteps`、`TraceWaterfall`、`ForceGraph`、`TypedLinkTable`/`TypedLinkDemo`、`SkillDetailDrawer` 等（30+，统一 `index.tsx` 导出）。
 
 ---
 
@@ -160,6 +177,7 @@
 | 2026-07-03~04 | `docs/operations/OPS_MANUAL.zh.md` 等 | 运维手册与 Windows+Ollama 速查 |
 | 2026-07-03~04 | `docs/integrations/embedding-providers.md`、`KEY_FILES.md` | Ollama 维度 / DeepSeek 文档同步 |
 | 2026-07-08~11 | `.qoder/skills/entity-state-design/` | 实体状态设计 Qoder 技能 |
+| 2026-07-17 | `admin/docs/NEW-CAPTURE-PLAN.zh.md` 等 | NewCapture / Jobs 队列相关计划与对照文档 |
 
 ---
 
@@ -167,7 +185,7 @@
 
 | 日期 | 文件 / 符号位置 | Bug 描述 | 根因 | 修复 | 影响面 |
 |------|----------------|----------|------|------|--------|
-| 2026-07-16 | `src/core/path-confine.ts` · `isPathContained()` | Windows 上，对任意真实的父子目录关系（无符号链接）一律误判为「不包含」——`gbrain check-resolvable`/`gbrain doctor` 的 `resolver_health` 在项目根目录下跑都报「找不到 skills 目录」，即便 `skills/RESOLVER.md` 明明存在 | 分隔符硬编码成 `'/'`：`resolvedParent.endsWith('/') ? resolvedParent : resolvedParent + '/'`。`realpathSync()` 在 Windows 上返回反斜杠路径（`C:\...\gbrain`），拼接后变成 `C:\...\gbrain` + `/`，`resolvedChild.startsWith(parentWithSep)` 永远匹配不上 | 改用 `path.sep`（Windows 上是 `\`，POSIX 不变还是 `/`）：`resolvedParent.endsWith(sep) ? resolvedParent : resolvedParent + sep` | 影响所有调用 `isPathContained` 的路径，不止 skills 目录探测——`sources-ops.ts` 的 symlink 逃逸校验、`operations.ts` 上传路径校验等在 Windows 上此前均有同样的假阴性。修复前 `bun test test/path-confine.test.ts` 在本机 28 pass/7 fail（1 个即此 bug；另 6 个是环境限制——Windows 未开 Developer Mode 导致 `symlinkSync` 报 `EPERM`，与本修复无关，未处理）；修复后 29 pass/6 fail，`bun run typecheck` 通过。修复后 `check-resolvable` 在项目根下正确探测到 `skills/`（走 `cwd_walk_up` 层），后续暴露的是真实的技能内容问题（`triggers:` 缺失等，与本 bug 无关，本仓库已有 checklist 条目记录该现象为正常） |
+| 2026-07-16 | `src/core/path-confine.ts` · `isPathContained()` | Windows 上，对任意真实的父子目录关系（无符号链接）一律误判为「不包含」——`gbrain check-resolvable`/`gbrain doctor` 的 `resolver_health` 在项目根目录下跑都报「找不到 skills 目录」，即便 `skills/RESOLVER.md` 明明存在 | 分隔符硬编码成 `'/'`：`realpathSync()` 在 Windows 返回反斜杠路径，拼接 `/` 后 `startsWith` 永远失败 | 改用 `path.sep` | 所有调用 `isPathContained` 的路径（skills 探测、symlink 逃逸校验、上传路径校验等）。已随 `1d74f822` 提交。修复后 `check-resolvable` 在项目根下正确探测到 `skills/` |
 
 ---
 
@@ -178,11 +196,12 @@
 | **Takes 双门控（§8.6）** | 可选能力，默认关。详见 `docs/operations/OPS_MANUAL.zh.md` §8.6 |
 | **Reranker 精排（§8.7）** | 本机 Ollama 栈已关 reranker。详见 `docs/operations/OPS_MANUAL.zh.md` §8.7 |
 | **Brain 多 Source 支持** | admin 顶栏 Source 选择器 + `callMcp` 自动带 `source_id`。详见 `admin/docs/FRONTEND_PLAN.zh.md` §4.3 |
-| **知识网络全量视图（远期）** | 触发条件：万级节点 / 力导向卡顿 / 跨 source 聚类需求。详见 `GRAPH_PAGE_COMPARISON.zh.md` |
+| **知识网络全量视图（远期）** | 触发条件：万级节点 / 力导向卡顿 / 跨 source 聚类需求。详见 `GRAPH_PAGE_COMPARISON.zh.md`。**注**：`graph_overview` 已提供默认无根骨架，本项指更大规模的全量/聚类视图 |
 | **Synthesize 测试标题对齐** | `Synthesize.page.test.tsx` 页头文案与实现不一致，1 用例待修 |
-| **Graph 页非 fork-safe 改动待独立提交** | 2026-07-14 落地的 `traverse_graph` 规模护栏（`node_limit`/`frontier_cap`）+ `traversePaths` 的 `to_title`/`to_type` 回传 + **新 op `graph_overview`（无根全量概览，含两引擎 `graphOverview`）**（见上「上游改动清单」B）已实现并本地测试通过，但**尚未提交**。按 `admin/CLAUDE.md` 非 fork-safe 流程：① 与同批 fork-safe 前端改动（`admin/src/lib/graph-cache.ts`、`admin/src/pages/brain/Graph.tsx` 可发现性/边着色/a11y 列表镜像等）**拆成独立 commit/PR**，PR 标题标注 non-fork-safe；② 合并前确认 `bun run typecheck` + `test/traverse-paths-metadata.test.ts` + `test/e2e/engine-parity.test.ts`（需 DATABASE_URL）全绿；③ 后续 `git merge upstream/master` 时对 `traverse_graph`/`traversePaths` 冲突按本文件条目整合，合并后跑 `admin/docs/TYPE-MIRROR-CHECKLIST.md` 人工核对 `GraphPath.to_title/to_type` 镜像仍一致。 |
-| **`chunk_strategy` 配置未接线，`semantic` chunker 是死代码** | 2026-07-17 排查确认：`gbrain config set chunk_strategy semantic` 对 import/sync/put/embed 主路径**无任何效果**。`src/core/import-file.ts:643,648` 与 `src/commands/embed.ts:538,543` 均无条件调用 `chunkers/recursive.ts` 的 `chunkText()`，从未读取 `chunk_strategy` 做分块器 dispatch。`chunkTextSemantic()`（`src/core/chunkers/semantic.ts:24`）全仓库零调用点——`src/` 下无 import，`test/` 下也无对应单测，是彻底的孤儿代码。`chunk_strategy` 这个 key 只出现在三处 schema 种子值（`src/schema.sql:606`、`src/core/schema-embedded.ts:610`、`src/core/pglite-schema.ts:432`，均写入默认值 `'semantic'`）与 `src/commands/migrate-engine.ts:259` 的引擎迁移拷贝列表里，没有任何运行时读取路径。`docs/GBRAIN_V0.md:401-409` 描述的「compiled_truth 用 semantic chunker、timeline 用 recursive chunker，可用 `--chunker` 标志或 frontmatter `chunk_strategy` 覆盖」是 v0 设计文档愿景，未落地实现（代码库里没有 `--chunker` 这个 CLI flag）。待定方案二选一：① 把 `chunkTextSemantic` 接入 `import-file.ts`/`embed.ts` 的分块 dispatch，按 `chunk_strategy` 配置真正选择分块器；② 若确认暂不需要该能力，删除死代码 + 种子值，避免继续误导用户「设置了就生效」。 |
-| **后台调度页性能：分层与优化时机** | 对照 `JOBS_PAGE_COMPARISON.zh.md` 复核后的性能结论（2026-07-14）。**Fork-safe 已做**：`fetchJobsQueuePanel` 改 `Promise.allSettled`（单桶失败只标该栏错误，不再全灭）；`useJobsQueuePanel` 补 15s 错误退避（不对已故障后端继续 3s 高频施压）；cancel/retry 成功后 `usePolling.reload()` 即时刷新；栏标题去歧义（`count` 明确是样本数非总数，运行中栏额外挂 `queue_health.active` 真实总数，待处理/已结束栏因合并多子状态不编造真值）；`mergePendingJobs`/`mergeTerminalJobs` 按 id 去重（发生在 sort 之后、slice 之前，避免重复项偷占样本上限名额）。**非 fork-safe 待办**（改 `src/commands/jobs-watch.ts` 的 `WatchSnapshot`/`readSnapshot`，需人工确认）：① 把 `MinionQueue.getStats()` 已算出但被丢弃的 `by_status` 透传进 `WatchSnapshot`，让待处理/已结束栏也能挂真实总数；② `readSnapshot` 加一个跳过 24h `by_type` 聚合的精简档——这才是每 tick 真正最贵的查询（`GROUP BY` + 多个 `FILTER`），而 Brain 页从不渲染 `by_type`，9 个 `list_jobs`（索引命中的 `WHERE status=? LIMIT`）反而很轻。**优化时机**：个人 brain 单机规模下现有负载（9× `list_jobs` + `getStats` 约 6 条 count 查询）对 PGLite/Postgres 可忽略，不必抢跑；命中以下任一条件再做，且①②打包成一个 PR 一次做完（避免分两次改同一文件）：(a) 出现多用户/多标签浏览器同开的真实负载证据，(b) `by_type` 聚合本身成为可观测的延迟瓶颈，(c) 恰好要为其他原因改 `jobs-watch.ts`。 |
+| **Graph non-fork-safe 合并护栏** | 后端 + 前端已在 `1d74f822` 提交（不再「待独立提交」）。后续每次 `git merge upstream/master`：① 对 `traverse_graph`/`traversePaths`/`graph_overview` 按本节 C 整合；② `bun run typecheck` + `test/traverse-paths-metadata.test.ts` + `test/graph-overview.test.ts`；③ 跑 `admin/docs/TYPE-MIRROR-CHECKLIST.md` 核对 `GraphPath.to_title/to_type` |
+| **`chunk_strategy` 配置未接线，`semantic` chunker 是死代码** | 2026-07-17 排查确认：`gbrain config set chunk_strategy semantic` 对 import/sync/put/embed 主路径**无任何效果**。运行时始终走 `chunkers/recursive.ts`；`chunkTextSemantic()` 全仓库零调用。种子值默认 `'semantic'` 会误导用户。待定：① 真正接线 dispatch；或 ② 删死代码 + 种子值 |
+| **后台调度页性能：分层与优化时机** | Fork-safe 已做（`allSettled`、错误退避、栏标题澄清、按 id 去重）。**非 fork-safe 待办**仍在：透传 `by_status`、精简档跳过 24h `by_type` 聚合（改 `jobs-watch.ts`）。个人单机规模不必抢跑；有真实负载或恰改该文件时再做 |
+| **试用上游新能力（本机）** | 见下「合并官方记录 → 2026-07-18」：FTS 语言、Moonshot、`--src-subpath`、`provider_chat_options` 等，按需验证 |
 
 ---
 
@@ -199,6 +218,9 @@
 | 2026-07-08~11 | 真理沉淀工作台 | `compile-truth.ts` + 3 op |
 | 2026-07-11 | Query 检索诊断 / Jobs 执行通道 / Dream Cycle phases | `query trace` / `execution-lane` / `status.ts` |
 | 2026-07-08~11 | Why? 教育按钮 / Admin 开发指南 | `why-topics.ts` / `admin/CLAUDE.md` |
+| 2026-07-14 | Graph 规模护栏 + 路径元数据 + `graph_overview` | `operations.ts` / 两引擎 / `Graph.tsx` |
+| 2026-07-16 | Windows `path-confine` 修复 | `path-confine.ts` |
+| 2026-07-17 | Ask 深化 / NewCapture / Jobs 队列加固 | `Ask.tsx`、`NewCaptureDialog`、`jobs-queue-fetch.ts`（`1d74f822`） |
 
 ---
 
@@ -217,3 +239,55 @@
 |------|----------------|------|------|
 | 2026-07-04 | v0.42.56.0（`3ba1351f`） | 无 | Ollama 维度等二开保留；`typecheck` 通过 |
 | 2026-07-11 | v0.42.58.0（`a25209bb`，#2627） | **5 文件** | embedding 维度区域：`embedding-dim-check.ts`、2 测试、2 文档；采用上游 `trust_custom_dims` + 保留二开 Ollama 5 参 `dimsProviderOptions`、DeepSeek 测试、LiteLLM 文档合并；Inbox/真理沉淀/serve-http 等**无冲突**自动合并 |
+| 2026-07-18 | v0.42.62.0 tip `f72de979`（合并提交 `45d46fd1`；自 v0.42.58.0） | 见合并当时记录；当前工作区干净 | 带入 0.42.59–0.62 + tip 上未打点版本的 feat；二开 Graph/Inbox/DeepSeek 等保留。升级后建议：`gbrain upgrade` → `gbrain doctor` |
+
+### 2026-07-18 合并：上游新增能力（相对 v0.42.58.0）
+
+> 下列为**官方**带入本分支的能力（非二开）。修复/加固类从略，完整条目见 `CHANGELOG.md`。
+
+#### 正式进 CHANGELOG（v0.42.59–0.42.62）
+
+| 能力 | 版本 | 要点 / 如何用 |
+|------|------|----------------|
+| **`provider_chat_options` 透传** | 0.42.62 | 按 provider/model 传 chat 选项（如关 thinking）。config 键 `provider_chat_options` |
+| **内联 `[Source: …, YYYY-MM-DD]` → timeline** | 0.42.61 | extract / auto-timeline 识别引用约定，幂等再提取 |
+| **Schema pack `extractable` 驱动 atom 发现** | 0.42.61 | 声明了 `extract_atoms` 的 pack，其 `extractable` 页类型参与发现（首轮 cycle 可能多扫 notes/emails 等） |
+| **Book-mirror 双栏 HTML `<table>`** | 0.42.61 | 多段单元格渲染更稳 |
+| **`auth register-client --bound-*`** | 0.42.62 | agent 绑定客户端，满足 `submit_agent` gate |
+| **`get_timeline` 日期窗口** / **`query` since·until 按有效日期** | 0.42.62 | 时间过滤不再误用 `updated_at` |
+| **LiteLLM chat + expansion touchpoints** | 0.42.62 | 本地 LiteLLM 代理可走 subagent，不再强依赖 Anthropic key |
+| **跨平台 `postinstall`（#1554）** | 0.42.62 | 与本仓库历史二开同款；以上游为准 |
+| **Windows serve 父进程 watchdog** | 0.42.62 | signal-0 探活，Windows 可用 |
+| **CI：OSV / Semgrep / release attestation** | 0.42.62 | 工程侧安全扫描（使用者无感） |
+| **Docs：macOS 26 PGLite + 原生 Postgres** | 0.42.62 | `docs/` 指南 |
+
+#### tip 上已合入、CHANGELOG 尚无独立版本条目的 feat
+
+| 能力 | Commit / PR | 要点 / 如何用 |
+|------|-------------|---------------|
+| **Moonshot / Kimi recipe** | `a8e6b1d1` #2378 | `src/core/ai/recipes/moonshot.ts`（kimi-k2.5 / 2.6 / 2.7-code 等） |
+| **可配置 FTS 语言 + `gbrain reindex-search-vector`** | `f8d11f67` #2941 | `docs/guides/multi-language-fts.md`；换语言后需 reindex |
+| **Postgres RLS source-scope（opt-in）** | `93cfb375` #2940 | 可选把 source 范围绑进 RLS（Postgres 引擎） |
+| **Sync monorepo：`--src-subpath` + `--exclude`** | `f72de979` #2942 | 从 git 仓子目录当独立 source 同步 |
+| **OpenAI `prompt_cache_key` 自动派生** | `2df41a84` #2933 | 原生 OpenAI chat 路径利于 prompt cache |
+
+#### 同波次高价值修复（对本机/多 source 影响大，摘要）
+
+- 多 source 写路径带正确 `source_id`（extract / cycle / ingest）
+- Windows `sync --full` 路径分隔符 + 大规模误删安全阀
+- `think` / takes / 图片 import 的源隔离收紧
+- Gateway 非 Anthropic 工具环 resume、DeepSeek reasoning 读取
+- Facts 含 `|` 的 fence 往返、模糊实体名隔离检疫
+- Autopilot 死锁/崩溃后可立即接管；atom slug 确定性去重
+- 搜索 cache 纳入 hard-exclude 策略（防跨策略污染）
+
+**建议本机验证：**
+
+```bash
+gbrain upgrade
+gbrain doctor
+gbrain stats
+# 可选：多语言 FTS / Moonshot / monorepo sync
+# gbrain reindex-search-vector --dry-run
+# gbrain sync --src-subpath <dir> --exclude ...
+```

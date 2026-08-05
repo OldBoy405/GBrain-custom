@@ -165,3 +165,13 @@ Single source of truth: `VERSION` file (4-segment format: `MAJOR.MINOR.PATCH.MIC
 - `bun run ci:local:diff` — diff-aware subset for fast iteration
 - Ship via the `/ship` skill, not by hand
 - Read `docs/RELEASING.md` for the full release process
+
+<!-- OPENWIKI:START -->
+
+## OpenWiki
+
+This repository uses OpenWiki for recurring code documentation. Start with `openwiki/quickstart.md`, then follow its links to architecture, workflows, domain concepts, operations, integrations, testing guidance, and source maps.
+
+The scheduled OpenWiki GitHub Actions workflow refreshes the repository wiki. Do not hand-edit generated OpenWiki pages unless explicitly asked; prefer updating source code/docs and letting OpenWiki regenerate.
+
+<!-- OPENWIKI:END -->

@@ -1,10 +1,14 @@
 /**
  * Drift guard for src/core/doctor-categories.ts.
  *
- * Reads src/commands/doctor.ts source via a literal-string scan, enumerates
+ * Reads doctor.ts + onboard/checks.ts via a literal-string scan, enumerates
  * every `name: '<...>'` Check name, and asserts each appears in exactly ONE
  * category set. The union of the four sets must equal the discovered names
  * exactly — no orphans, no extras.
+ *
+ * onboard/checks.ts is included because doctor.ts pushes those Checks via
+ * `runAllOnboardChecks` (v0.41.18.0); their `name:` literals never appear in
+ * doctor.ts itself, which previously let them silently fall through to 'meta'.
  *
  * This is the structural failure the v0.41.19.0 plan-eng-review caught:
  * doctor.ts grows new checks regularly; without this guard, the
@@ -24,27 +28,32 @@ import {
   _resetUnknownCheckWarningsForTest,
 } from '../src/core/doctor-categories.ts';
 
-const DOCTOR_TS_PATH = join(import.meta.dir, '..', 'src', 'commands', 'doctor.ts');
+const CHECK_SOURCE_PATHS = [
+  join(import.meta.dir, '..', 'src', 'commands', 'doctor.ts'),
+  join(import.meta.dir, '..', 'src', 'core', 'onboard', 'checks.ts'),
+];
 
 function enumerateCheckNames(): Set<string> {
-  const source = readFileSync(DOCTOR_TS_PATH, 'utf-8');
   const names = new Set<string>();
-  // 1) Inline object-literal form: `{ name: 'foo', ... }`.
-  for (const m of source.matchAll(/name:\s*['"]([a-z][a-z0-9_]+)['"]/g)) {
-    names.add(m[1]);
-  }
-  // 2) Helper-function form: `const name = 'foo';` inside a check helper.
-  //    Catches checks like `nightly_quality_probe_health` and
-  //    `conversation_facts_backlog` that build the Check from a captured
-  //    name constant.
-  for (const m of source.matchAll(/const\s+name\s*=\s*['"]([a-z][a-z0-9_]+)['"]/g)) {
-    names.add(m[1]);
+  for (const path of CHECK_SOURCE_PATHS) {
+    const source = readFileSync(path, 'utf-8');
+    // 1) Inline object-literal form: `{ name: 'foo', ... }`.
+    for (const m of source.matchAll(/name:\s*['"]([a-z][a-z0-9_]+)['"]/g)) {
+      names.add(m[1]);
+    }
+    // 2) Helper-function form: `const name = 'foo';` inside a check helper.
+    //    Catches checks like `nightly_quality_probe_health` and
+    //    `conversation_facts_backlog` that build the Check from a captured
+    //    name constant.
+    for (const m of source.matchAll(/const\s+name\s*=\s*['"]([a-z][a-z0-9_]+)['"]/g)) {
+      names.add(m[1]);
+    }
   }
   return names;
 }
 
 describe('doctor-categories drift guard', () => {
-  test('every check name in doctor.ts source belongs to exactly one category set', () => {
+  test('every check name in doctor/onboard sources belongs to exactly one category set', () => {
     const discovered = enumerateCheckNames();
     const allCategorized = new Set<string>([
       ...BRAIN_CHECK_NAMES,
@@ -59,7 +68,7 @@ describe('doctor-categories drift guard', () => {
     }
     if (missing.length > 0) {
       throw new Error(
-        `These check names appear in doctor.ts but are not categorized in ` +
+        `These check names appear in doctor.ts / onboard/checks.ts but are not categorized in ` +
           `src/core/doctor-categories.ts: ${missing.sort().join(', ')}. ` +
           `Add each to BRAIN/SKILL/OPS/META_CHECK_NAMES.`,
       );
@@ -86,7 +95,7 @@ describe('doctor-categories drift guard', () => {
     expect(dupes).toEqual([]);
   });
 
-  test('every categorized name is currently used in doctor.ts source (no stale entries)', () => {
+  test('every categorized name is currently used in doctor/onboard sources (no stale entries)', () => {
     const discovered = enumerateCheckNames();
     const allCategorized = new Set<string>([
       ...BRAIN_CHECK_NAMES,
@@ -106,7 +115,7 @@ describe('doctor-categories drift guard', () => {
     // refactors require more headroom.
     if (stale.length > 2) {
       throw new Error(
-        `These categorized names no longer appear in doctor.ts: ${stale.sort().join(', ')}. ` +
+        `These categorized names no longer appear in doctor.ts / onboard/checks.ts: ${stale.sort().join(', ')}. ` +
           `Remove them from src/core/doctor-categories.ts.`,
       );
     }
