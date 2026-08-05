@@ -7,18 +7,20 @@
 | 官方仓库 | https://github.com/garrytan/gbrain |
 | 二开仓库 | https://github.com/OldBoy405/GBrain-custom |
 | 主开发分支 | `custom/main` |
-| 当前对齐上游 | **v0.42.62.0** tip `f72de979`（含正式 release 之后的若干 feat） |
+| 当前对齐上游 | **v0.42.73.2** tip `15b9863d` |
 | 产品名 | （待填写） |
 | 是否对外分发 | （是/否，待填写） |
-| HEAD | `45d46fd1`（2026-07-18 20:03，`合并上游更新`；parents: `1d74f822` + `f72de979`） |
-| 工作区状态（截至 2026-07-18） | **干净**（相对 `origin/custom/main` 无未提交改动） |
+| HEAD | `a09f3574`（2026-08-05，`合并上游更新`；parents: `9d4c5191` + `15b9863d`） |
+| 工作区状态（截至 2026-08-05） | 跟踪文件干净；本地仅剩未跟踪 `.gbrain/` / `.qoder/better-harness/` |
 
 **近期关键本地提交：**
 
 | Commit | 说明 |
 |--------|------|
 | `1d74f822` | `feat(custom): Graph概览/Ask/NewCapture/Jobs队列 + graph_overview 后端` |
-| `45d46fd1` | 合并上游 `upstream/master`（自 v0.42.58.0 → tip） |
+| `45d46fd1` | 合并上游 `upstream/master`（自 v0.42.58.0 → tip `f72de979`） |
+| `9d4c5191` | `docs(custom): OpenWiki 接入 + doctor 分类漂移修复 + 二开文档刷新` |
+| `a09f3574` | 合并上游 `upstream/master`（自 tip `f72de979` → **v0.42.73.2** `15b9863d`） |
 
 ---
 
@@ -51,7 +53,7 @@
 | 2026-07-03 | `test/embedding-dim-check.test.ts` | Ollama / llama-server / litellm 维度用例 | 锁住本机/代理 provider 的维度放行规则 | 同上 |
 | 2026-07-04 | `src/core/config.ts` · `deepseek_api_key` | 文件平面字段 + `DEEPSEEK_API_KEY` env + `KNOWN_CONFIG_KEYS` 注册 | 接入 DeepSeek 作为可选 Chat/Expansion provider | 保留字段注册行；上游新增 key 时一并注册，不删 DeepSeek |
 | 2026-07-04 | `src/core/ai/build-gateway-config.ts` | `deepseek_api_key`→`DEEPSEEK_API_KEY`；`DEEPSEEK_BASE_URL`→`base_urls.deepseek` | 把 config/env 注入 gateway，与 openai/anthropic 同模式 | 保留 DeepSeek env 注入；与 openai/anthropic 同模式并列 |
-| 2026-07-04 | `src/core/ai/recipes/deepseek.ts` | `expansion` touchpoint；V4 模型列表；1M context | 提供 DeepSeek V4 recipe（含 expansion） | 整文件保留；上游若改 recipe 结构，迁移字段后保留 expansion 配置 |
+| 2026-07-04 | `src/core/ai/recipes/deepseek.ts` | `expansion` touchpoint；V4 模型列表；1M context | 提供 DeepSeek V4 recipe（含 expansion） | 整文件保留；上游若改 recipe 结构，迁移字段后保留 expansion。**2026-08-05：上游已吸收同款**，合并以上游 touchpoints/定价为准，保留 config.json 文案 |
 | 2026-07-04 | `src/core/model-pricing.ts` | 登记 `deepseek-v4-flash` / `deepseek-v4-pro` | 成本估算/eval 需要定价行，且定价唯一真源在此 | 保留定价行；定价以本文件为唯一真源，不手抄到别处 |
 | 2026-07-04 | `test/ai/build-gateway-config.test.ts` 等 | DeepSeek config / expansion / 定价回归 | 锁住 DeepSeek 接线与定价不漂移 | 两边用例都保留 |
 
@@ -65,7 +67,7 @@
 | 2026-07-09 | `src/commands/serve-http.ts` · `CUSTOM ADMIN ROUTES` | 新增 `POST /admin/api/op`（cookie `requireAdmin`→`dispatchToolCall`，响应 `{result:ToolResult}`） | Brain SPA 用 cookie 调 MCP op，无需把 Bearer 写进 localStorage | **整块保留** BEGIN/END 标记内代码；上游路由追加后 CUSTOM 块贴末尾 |
 | 2026-07-08~11 | `src/core/inbox.ts` · **新文件** | Inbox 投影/状态：`pageToInboxItem`、`prepareInboxCaptureContent`、`patchInboxFrontmatter` 等 | Brain Inbox 页需要专用投影与 frontmatter 状态机 | 新文件无冲突；直接保留 |
 | 2026-07-08~11 | `src/core/types.ts` · `INBOX_STATUSES` / `InboxItem` / `InboxDetail` | `PageFilters` 之后追加 inbox 类型块 | 前后端/op 共用 inbox 类型契约 | 保留类型块；上游若在相邻位置加类型，顺序上 inbox 块不删 |
-| 2026-07-08~11 | `src/core/migrate.ts` · `inbox_workflow_frontmatter` | 回填存量 `inbox/*` 页的 `inbox_status` / `inbox_legacy_source` | 存量 inbox 页缺状态字段，升级后列表/过滤才能工作 | 保留 migration 条目；**注意 version 序号**不与上游新 migration 撞号，必要时改序号 |
+| 2026-07-08~11 | `src/core/migrate.ts` · `inbox_workflow_frontmatter` | 回填存量 `inbox/*` 页的 `inbox_status` / `inbox_legacy_source` | 存量 inbox 页缺状态字段，升级后列表/过滤才能工作 | 保留 migration 条目；**注意 version 序号**不与上游新 migration 撞号。2026-08-05 合并时与上游 v124/v125 撞号 → **改号为 v126**（幂等 UPDATE，旧脑已跑过旧号仍安全） |
 | 2026-07-08~11 | `src/core/operations.ts` · `list_inbox` / `get_inbox_item` / `trigger_inbox_enrichment` / `discard_inbox_items` | 4 个新 op，插在 `list_pages` 与 `search` 之间 | Admin Inbox 工作流（列表/详情/enrich/丢弃）需要契约化 op | 整段 op 定义保留；上游同位置新增 op 时按逻辑顺序并列，导出数组也要注册 |
 | 2026-07-08~11 | `src/core/operations.ts` · `find_conflicts` / `compile_truth` / `adopt_compiled_truth` | 真理沉淀 3 op + 导出数组注册 | Synthesize 页「找矛盾→编译真理→采纳」工作台需要后端 op | 整段保留；`compile_truth` handler 依赖 `compile-truth.ts`，合并后确认 import 仍在 |
 | 2026-07-08~11 | `src/core/operations.ts` · `list_jobs` / `get_job` handler | 返回前 `.map()` 附加 `execution_lane`（`getExecutionLane(name)`） | Jobs 页要区分 shell/LLM 等执行通道做标签展示 | 保留 `.map()` 追加；上游若改返回形状，在最终返回前加回 `execution_lane` |
@@ -239,7 +241,45 @@
 |------|----------------|------|------|
 | 2026-07-04 | v0.42.56.0（`3ba1351f`） | 无 | Ollama 维度等二开保留；`typecheck` 通过 |
 | 2026-07-11 | v0.42.58.0（`a25209bb`，#2627） | **5 文件** | embedding 维度区域：`embedding-dim-check.ts`、2 测试、2 文档；采用上游 `trust_custom_dims` + 保留二开 Ollama 5 参 `dimsProviderOptions`、DeepSeek 测试、LiteLLM 文档合并；Inbox/真理沉淀/serve-http 等**无冲突**自动合并 |
-| 2026-07-18 | v0.42.62.0 tip `f72de979`（合并提交 `45d46fd1`；自 v0.42.58.0） | 见合并当时记录；当前工作区干净 | 带入 0.42.59–0.62 + tip 上未打点版本的 feat；二开 Graph/Inbox/DeepSeek 等保留。升级后建议：`gbrain upgrade` → `gbrain doctor` |
+| 2026-07-18 | v0.42.62.0 tip `f72de979`（合并提交 `45d46fd1`；自 v0.42.58.0） | 见合并当时记录 | 带入 0.42.59–0.62 + tip 上未打点版本的 feat；二开 Graph/Inbox/DeepSeek 等保留 |
+| 2026-08-05 | **v0.42.73.2** tip `15b9863d`（合并提交 `a09f3574`；自 tip `f72de979`） | **10 文件**（见下） | DeepSeek 已基本被上游吸收；inbox migration → v126；admin 经 `build:admin` 重生。`typecheck` + doctor/gateway/inbox/pricing 相关测试通过 |
+
+### 2026-08-05 合并：冲突整合摘要 + 上游能力（相对 tip `f72de979` / v0.42.62 波次）
+
+#### 冲突文件（按总则整合）
+
+| 文件 | 整合结果 |
+|------|----------|
+| `src/core/ai/recipes/deepseek.ts` | **以上游为准**（expansion + v4 模型列表 + 2026-07-27 定价）；保留 `deepseek_api_key` config 文案 |
+| `src/core/ai/build-gateway-config.ts` | 注释并列表：deepseek + 上游 openrouter/voyage/dashscope/google |
+| `src/core/model-pricing.ts` | 上游 deepseek 行 + 保留二开 `input_cache_hit` |
+| `test/ai/gateway.test.ts` / `gateway-chat.test.ts` | **两边用例都保留**（上游 openai-compat 矩阵 + 二开 v4/expansion） |
+| `src/core/doctor-categories.ts` | 并入上游 `undeclared_db_only_pages` |
+| `test/doctor-categories.test.ts` | 以上游 drift guard 为准（已含 onboard/checks 扫描） |
+| `src/core/migrate.ts` | 上游 v124/v125 保留；`inbox_workflow_frontmatter` **改号 v126** |
+| `admin/dist/*` + `src/admin-embedded.ts` | **不手改** → `bun run build:admin` 重生（保留 Brain SPA） |
+| `test/inbox-workflow.test.ts`（合并后类型/期望） | 补 `deadlineAtMs: null`；migration 期望 → 126 |
+
+#### 本波次上游高价值能力（摘要；完整见 `CHANGELOG.md`）
+
+| 能力 | 版本 | 要点 |
+|------|------|------|
+| **OAuth slug-prefix write fence** | 0.42.72 | `--bound-slug-prefixes` 服务端强制写隔离；`docs/integrations/qm-harness.md` |
+| **Embedding 跨 provider 迁移** | 0.42.67 | `gbrain migrate-embeddings`（离 ZeroEntropy 等） |
+| **Conversation parser LLM fallback** | 0.42.66 | 可选 LLM 回退解析会话 |
+| **社区修复双波** | 0.42.69–0.70 | 静默失败 / 本地模型 / 多 source / Windows 等 |
+| **GitHub Releases 随版本发布** | 0.42.71 | 自更新链路 |
+| **Dedup 写路径 scope  hardening** | 0.42.73.2 | 受限客户端 dedup 重定向也过写范围检查 |
+| **OpenWiki（本仓库先行）** | `9d4c5191` | 二开侧文档；与上游合并无关 |
+
+**建议本机验证：**
+
+```bash
+gbrain upgrade
+gbrain doctor
+gbrain stats
+# 若有 inbox 存量页：确认 frontmatter 含 inbox_status（v126 幂等回填）
+```
 
 ### 2026-07-18 合并：上游新增能力（相对 v0.42.58.0）
 
