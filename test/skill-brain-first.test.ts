@@ -67,6 +67,23 @@ describe('parseSkillFrontmatter', () => {
     expect(parseSkillFrontmatter('# Just a heading\nNo frontmatter here.')).toBeNull();
   });
 
+  test('parses frontmatter on CRLF checkouts (Windows core.autocrlf)', () => {
+    const content = [
+      '---',
+      'name: thing',
+      'triggers:',
+      '  - "optimize this skill"',
+      '  - "run skillopt"',
+      '---',
+      '',
+      '# thing',
+    ].join('\r\n');
+    const fm = parseSkillFrontmatter(content);
+    expect(fm).not.toBeNull();
+    expect(fm!.name).toBe('thing');
+    expect(fm!.triggers).toEqual(['optimize this skill', 'run skillopt']);
+  });
+
   test('parses name, mutating, writes_pages, writes_to', () => {
     const content = [
       '---',

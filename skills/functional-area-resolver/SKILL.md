@@ -1,5 +1,3 @@
-> **Convention:** see [conventions/brain-first.md](../conventions/brain-first.md) for the lookup chain (search → query → get_page → external).
-
 ---
 name: functional-area-resolver
 version: 1.0.0
@@ -37,6 +35,8 @@ brain_first: exempt
 ---
 
 # Functional-Area Resolver — Pattern for Compressing Routing Tables
+
+> **Convention:** see [conventions/brain-first.md](../conventions/brain-first.md) for the lookup chain (search → query → get_page → external).
 
 ## Problem
 

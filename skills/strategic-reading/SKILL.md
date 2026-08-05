@@ -1,5 +1,3 @@
-> **Convention:** see [conventions/brain-first.md](../conventions/brain-first.md) for the lookup chain (search → query → get_page → external).
-
 ---
 name: strategic-reading
 version: 0.1.0
@@ -25,6 +23,8 @@ brain_first: exempt
 
 # strategic-reading — Applied Analysis from Source Texts
 
+> **Convention:** see [conventions/brain-first.md](../conventions/brain-first.md) for the lookup chain (search → query → get_page → external).
+>
 > **Convention:** see [conventions/quality.md](../conventions/quality.md) for
 > citation rules (every recommendation cites the source) and back-link
 > enforcement.

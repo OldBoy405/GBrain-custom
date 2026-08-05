@@ -82,7 +82,12 @@ export interface ParsedFrontmatter {
  * `readFileSync(path, 'utf-8')` at the boundary.
  */
 export function parseSkillFrontmatter(content: string): ParsedFrontmatter | null {
-  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  // Normalize CRLF → LF so Windows checkouts (core.autocrlf=true) parse.
+  // Same class of bug as extractTriggers in check-resolvable.ts: without this,
+  // /^---\n/ never matches `---\r\n` and every skill on Windows looks like it
+  // has no frontmatter triggers (resolver_health UNREACHABLE / routing_miss).
+  const normalized = content.replace(/\r\n/g, '\n');
+  const fmMatch = normalized.match(/^---\n([\s\S]*?)\n---/);
   if (!fmMatch) return null;
   const raw = fmMatch[1];
   const out: ParsedFrontmatter = { raw };

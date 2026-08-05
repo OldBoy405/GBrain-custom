@@ -7,6 +7,7 @@ description: |
   MECE against existing skills. Updates manifest and resolver.
 triggers:
   - "create a skill"
+  - "create a new skill"
   - "new skill"
   - "improve this skill"
 tools:
