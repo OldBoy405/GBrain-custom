@@ -43,6 +43,7 @@ function job(id: number, slug: string): MinionJobContext {
     attempts_made: 1,
     signal: new AbortController().signal,
     shutdownSignal: new AbortController().signal,
+    deadlineAtMs: null,
     updateProgress: async () => {},
     updateTokens: async () => {},
     log: async () => {},
@@ -294,9 +295,9 @@ describe('Inbox deterministic workflow', () => {
     await put('inbox/legacy', '# Legacy');
     await engine.setConfig('version', '122');
     const result = await runMigrations(engine);
-    // inbox_workflow_frontmatter was renumbered 123 → 124 on the upstream merge
-    // that landed `configurable_fts_language` at 123.
-    expect(result.current).toBe(124);
+    // inbox_workflow_frontmatter was renumbered to 126 on the upstream merge
+    // that landed v124 page_search_vector_drop_compiled_truth + v125 take_proposals.
+    expect(result.current).toBe(126);
     const page = await engine.getPage('inbox/legacy', { sourceId: 'default' });
     expect(page?.frontmatter.raw_content).toBe('# Legacy');
     expect(page?.frontmatter.inbox_status).toBe('pending_frontmatter');

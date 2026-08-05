@@ -100,7 +100,15 @@ function gbrainHome(): string {
  *  core→commands import). which gbrain → process.execPath → argv[1] → "gbrain". */
 function resolveGbrainCliPath(): string {
   try {
-    const which = execSync('which gbrain', { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    // #2747: `env: process.env` required under Bun — see the sibling copy
+    // of this function in commands/autopilot.ts for the full explanation
+    // (Bun snapshots process.env at its own startup; execSync without an
+    // explicit env is blind to any PATH mutation since then).
+    const which = execSync('which gbrain', {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      env: process.env,
+    }).trim();
     if (which) return which;
   } catch { /* not on PATH */ }
   const exec = process.execPath ?? '';
@@ -386,8 +394,9 @@ function installHelper(repoPath: string, dryRun: boolean): { status: StepStatus;
   const helperPath = join(repoPath, HELPER_REL);
   const script = renderCommitPushHelper();
   if (existsSync(helperPath) && readFileSync(helperPath, 'utf-8') === script) {
-    // Ensure exec bit even when content is current.
-    try { chmodSync(helperPath, 0o755); } catch { /* */ }
+    // Ensure exec bit even when content is current — but not in dry-run: a
+    // preview must not mutate permissions (#3736).
+    if (!dryRun) { try { chmodSync(helperPath, 0o755); } catch { /* */ } }
     return { status: 'ok', detail: `${HELPER_REL} already current` };
   }
   if (dryRun) return { status: 'fixed', detail: `would write ${HELPER_REL} (dry-run)` };

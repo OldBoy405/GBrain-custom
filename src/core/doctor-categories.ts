@@ -35,10 +35,11 @@
  *
  * The doctor renders both side by side.
  *
- * Drift contract: every check name that ships in doctor.ts MUST appear in
+ * Drift contract: every check name that ships through doctor MUST appear in
  * exactly one set below. The drift-guard test in
- * `test/doctor-categories.test.ts` enforces this by reading doctor.ts source
- * via a tagged-string scan and asserting set membership exactly.
+ * `test/doctor-categories.test.ts` enforces this by reading doctor check
+ * emitter sources via a tagged-string scan and asserting set membership
+ * exactly.
  *
  * If you add a new doctor check, you MUST add its name to the appropriate
  * set here. The categorize step in `src/commands/doctor.ts` falls through
@@ -59,6 +60,7 @@ export const BRAIN_CHECK_NAMES: ReadonlySet<string> = new Set([
   'calibration_freshness',
   'child_table_orphans',
   'chronicle_projection_health',
+  'content_hash_duplicates',
   'content_sanity_audit_recent',
   'contextual_retrieval_coverage',
   'contradictions',
@@ -98,9 +100,11 @@ export const BRAIN_CHECK_NAMES: ReadonlySet<string> = new Set([
   'orphan_ratio',
   'oversized_pages',
   'quarantined_pages',
+  'raw_provenance',
   'flagged_pages',
   'salience_health',
   'scraper_junk_pages',
+  'source_config_shape',
   'source_routing_health',
   'stub_guard_24h',
   'sync_failures',
@@ -108,7 +112,9 @@ export const BRAIN_CHECK_NAMES: ReadonlySet<string> = new Set([
   'takes_count',
   'takes_weight_grid',
   'timeline_coverage',
+  'undeclared_db_only_pages',
   'unified_multimodal_coverage',
+  'unverified_extractions',
   'voice_gate_health',
 ]);
 
@@ -125,6 +131,7 @@ export const SKILL_CHECK_NAMES: ReadonlySet<string> = new Set([
   'retrieval_reflex_health',
   'skill_brain_first',
   'skill_conformance',
+  'skills_manifest_integrity',
   'whoknows_health',
 ]);
 
@@ -138,9 +145,11 @@ export const OPS_CHECK_NAMES: ReadonlySet<string> = new Set([
   'batch_retry_health',
   'brainstorm_health',
   'connection',
+  'db_only_collector_collision',
   'federation_health',
   'home_dir_in_worktree',
   'index_audit',
+  'npm_squat',
   'oauth_confidential_client_health',
   'orphan_clones',
   'pgbouncer_prepare',

@@ -1,6 +1,14 @@
 import type { BrainEngine } from './engine.ts';
 import { slugifyPath } from './sync.ts';
 import { getFtsLanguage } from './fts-language.ts';
+import { hnswMaxDimsForType } from './vector-index.ts';
+// runMigrations executes while an initialized engine is live. Keep its helper
+// modules in the static graph rather than importing them from async handlers.
+import {
+  isStatementTimeoutError,
+  isRetryableConnError,
+} from './retry-matcher.ts';
+import { repairTimelineDedupIndex } from './timeline-dedup-repair.ts';
 
 /**
  * Schema migrations — run automatically on initSchema().
@@ -109,6 +117,43 @@ export class MigrationRetryExhausted extends Error {
   }
 }
 
+/**
+ * Postgres-only: drops `indexName` iff it currently exists AND is invalid — the
+ * leftover of a `CREATE INDEX CONCURRENTLY` that failed partway through. Callers
+ * MUST already be inside an `engine.kind === 'postgres'` branch (PGLite has no
+ * concurrent-build invalid-index concept and no `pg_index` catalog in the same
+ * shape) and MUST run this before their own `CREATE INDEX CONCURRENTLY IF NOT
+ * EXISTS`, since a stale invalid entry blocks the create from ever landing.
+ *
+ * Deliberately does NOT wrap the drop in `DO $$ ... EXECUTE '...' END $$`
+ * (#1178): Postgres rejects `CONCURRENTLY` from any function/EXECUTE context —
+ * the guard condition works, but the EXECUTE that follows always throws
+ * "DROP INDEX CONCURRENTLY cannot be executed from a function". The validity
+ * probe runs as a plain application-level SELECT instead, and the DROP (when
+ * needed) runs as its own top-level `runMigration` call.
+ */
+async function dropInvalidConcurrentIndex(
+  engine: BrainEngine,
+  version: number,
+  indexName: string,
+): Promise<boolean> {
+  // to_regclass() resolves the unqualified name through search_path — the same
+  // resolution the unqualified DROP below relies on — instead of matching
+  // pg_class.relname bare, which could hit a same-named index in a different
+  // schema on a non-default search_path (codex review, #1178).
+  const rows = await engine.executeRaw<{ invalid: boolean }>(
+    `SELECT NOT i.indisvalid AS invalid
+       FROM pg_index i
+      WHERE i.indexrelid = to_regclass($1)`,
+    [indexName],
+  );
+  const isInvalid = rows.some((r) => r.invalid);
+  if (isInvalid) {
+    await engine.runMigration(version, `DROP INDEX CONCURRENTLY IF EXISTS ${indexName};`);
+  }
+  return isInvalid;
+}
+
 // Migrations are embedded here, not loaded from files.
 // Add new migrations at the end. Never modify existing ones.
 // Exported for tests that structurally assert migration contents (e.g., "v9 must
@@ -135,7 +180,10 @@ export const MIGRATIONS: Migration[] = [
           }
         }
       }
-      if (renamed > 0) console.log(`  Renamed ${renamed} slugs`);
+      // Migration progress goes to stderr — stdout must stay clean for
+      // callers parsing JSON (e.g. `gbrain doctor --json | jq`); migrations
+      // can run lazily inside ANY command's first DB connect.
+      if (renamed > 0) process.stderr.write(`  Renamed ${renamed} slugs\n`);
     },
   },
   {
@@ -498,18 +546,7 @@ export const MIGRATIONS: Migration[] = [
     sql: '',
     handler: async (engine) => {
       if (engine.kind === 'postgres') {
-        await engine.runMigration(
-          14,
-          `DO $$ BEGIN
-             IF EXISTS (
-               SELECT 1 FROM pg_index i
-               JOIN pg_class c ON c.oid = i.indexrelid
-               WHERE c.relname = 'idx_pages_updated_at_desc' AND NOT i.indisvalid
-             ) THEN
-               EXECUTE 'DROP INDEX CONCURRENTLY IF EXISTS idx_pages_updated_at_desc';
-             END IF;
-           END $$;`
-        );
+        await dropInvalidConcurrentIndex(engine, 14, 'idx_pages_updated_at_desc');
         await engine.runMigration(
           14,
           `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pages_updated_at_desc
@@ -1615,18 +1652,7 @@ export const MIGRATIONS: Migration[] = [
       // 3. Partial index for the autopilot purge sweep. Postgres CONCURRENTLY
       //    avoids the SHARE lock on `pages`; PGLite has no concurrent writers.
       if (engine.kind === 'postgres') {
-        // Pre-drop any invalid index from a prior CONCURRENTLY failure (matches v14 pattern).
-        await engine.runMigration(34, `
-          DO $$ BEGIN
-            IF EXISTS (
-              SELECT 1 FROM pg_index i
-              JOIN pg_class c ON c.oid = i.indexrelid
-              WHERE c.relname = 'pages_deleted_at_purge_idx' AND NOT i.indisvalid
-            ) THEN
-              EXECUTE 'DROP INDEX CONCURRENTLY IF EXISTS pages_deleted_at_purge_idx';
-            END IF;
-          END $$;
-        `);
+        await dropInvalidConcurrentIndex(engine, 34, 'pages_deleted_at_purge_idx');
         await engine.runMigration(34, `
           CREATE INDEX CONCURRENTLY IF NOT EXISTS pages_deleted_at_purge_idx
             ON pages (deleted_at) WHERE deleted_at IS NOT NULL;
@@ -1963,18 +1989,7 @@ export const MIGRATIONS: Migration[] = [
 
       // 2. Expression index for since/until date-range filters.
       if (engine.kind === 'postgres') {
-        // Pre-drop any invalid index from a prior CONCURRENTLY failure.
-        await engine.runMigration(38, `
-          DO $$ BEGIN
-            IF EXISTS (
-              SELECT 1 FROM pg_index i
-              JOIN pg_class c ON c.oid = i.indexrelid
-              WHERE c.relname = 'pages_coalesce_date_idx' AND NOT i.indisvalid
-            ) THEN
-              EXECUTE 'DROP INDEX CONCURRENTLY IF EXISTS pages_coalesce_date_idx';
-            END IF;
-          END $$;
-        `);
+        await dropInvalidConcurrentIndex(engine, 38, 'pages_coalesce_date_idx');
         await engine.runMigration(38, `
           CREATE INDEX CONCURRENTLY IF NOT EXISTS pages_coalesce_date_idx
             ON pages ((COALESCE(effective_date, updated_at)));
@@ -2273,11 +2288,19 @@ export const MIGRATIONS: Migration[] = [
         useHalfvec = true;
       }
 
-      const vecType = useHalfvec ? 'HALFVEC' : 'VECTOR';
+      const columnType = useHalfvec ? 'halfvec' : 'vector';
+      const vecType = columnType.toUpperCase();
       // HNSW operator class must match the column type:
       //   VECTOR(n)  → vector_cosine_ops
       //   HALFVEC(n) → halfvec_cosine_ops
       const opclass = useHalfvec ? 'halfvec_cosine_ops' : 'vector_cosine_ops';
+      const hnswMaxDims = hnswMaxDimsForType(columnType);
+      const factsEmbeddingIndexSql = embeddingDim <= hnswMaxDims
+        ? `CREATE INDEX IF NOT EXISTS idx_facts_embedding_hnsw
+          ON facts USING hnsw (embedding ${opclass})
+          WHERE embedding IS NOT NULL AND expired_at IS NULL;`
+        : `-- idx_facts_embedding_hnsw skipped: pgvector HNSW ${columnType} indexes support
+        -- at most ${hnswMaxDims} dimensions; exact vector scans remain available.`;
       // FK to sources is added in a separate ALTER TABLE rather than inline
       // on the column. Inline `REFERENCES` worked on PGLite but silently
       // got dropped by postgres.js's `unsafe()` multi-statement path on
@@ -2351,9 +2374,7 @@ export const MIGRATIONS: Migration[] = [
           ON facts(source_id, entity_slug)
           WHERE consolidated_at IS NULL AND expired_at IS NULL;
 
-        CREATE INDEX IF NOT EXISTS idx_facts_embedding_hnsw
-          ON facts USING hnsw (embedding ${opclass})
-          WHERE embedding IS NOT NULL AND expired_at IS NULL;
+        ${factsEmbeddingIndexSql}
       `;
 
       await engine.runMigration(40, factsDDL);
@@ -2867,8 +2888,16 @@ export const MIGRATIONS: Migration[] = [
         useHalfvec = true;
       }
 
-      const vecType = useHalfvec ? 'HALFVEC' : 'VECTOR';
+      const columnType = useHalfvec ? 'halfvec' : 'vector';
+      const vecType = columnType.toUpperCase();
       const opclass = useHalfvec ? 'halfvec_cosine_ops' : 'vector_cosine_ops';
+      const hnswMaxDims = hnswMaxDimsForType(columnType);
+      const queryCacheEmbeddingIndexSql = embeddingDim <= hnswMaxDims
+        ? `CREATE INDEX IF NOT EXISTS idx_query_cache_embedding_hnsw
+          ON query_cache USING hnsw (embedding ${opclass})
+          WHERE embedding IS NOT NULL;`
+        : `-- idx_query_cache_embedding_hnsw skipped: pgvector HNSW ${columnType} indexes support
+        -- at most ${hnswMaxDims} dimensions; exact vector scans remain available.`;
 
       const ddl = `
         CREATE TABLE IF NOT EXISTS query_cache (
@@ -2887,9 +2916,7 @@ export const MIGRATIONS: Migration[] = [
         CREATE INDEX IF NOT EXISTS idx_query_cache_source_created
           ON query_cache(source_id, created_at DESC);
 
-        CREATE INDEX IF NOT EXISTS idx_query_cache_embedding_hnsw
-          ON query_cache USING hnsw (embedding ${opclass})
-          WHERE embedding IS NOT NULL;
+        ${queryCacheEmbeddingIndexSql}
       `;
 
       await engine.runMigration(55, ddl);
@@ -3264,18 +3291,7 @@ export const MIGRATIONS: Migration[] = [
     sql: '',
     handler: async (engine) => {
       if (engine.kind === 'postgres') {
-        await engine.runMigration(
-          66,
-          `DO $$ BEGIN
-             IF EXISTS (
-               SELECT 1 FROM pg_index i
-               JOIN pg_class c ON c.oid = i.indexrelid
-               WHERE c.relname = 'idx_chunks_embedding_null' AND NOT i.indisvalid
-             ) THEN
-               EXECUTE 'DROP INDEX CONCURRENTLY IF EXISTS idx_chunks_embedding_null';
-             END IF;
-           END $$;`
-        );
+        await dropInvalidConcurrentIndex(engine, 66, 'idx_chunks_embedding_null');
         await engine.runMigration(
           66,
           `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_chunks_embedding_null
@@ -3535,19 +3551,7 @@ export const MIGRATIONS: Migration[] = [
     sql: '',
     handler: async (engine) => {
       if (engine.kind === 'postgres') {
-        // Pre-drop invalid remnant from a failed CONCURRENTLY attempt.
-        await engine.runMigration(
-          71,
-          `DO $$ BEGIN
-             IF EXISTS (
-               SELECT 1 FROM pg_index i
-               JOIN pg_class c ON c.oid = i.indexrelid
-               WHERE c.relname = 'takes_resolved_at_idx' AND NOT i.indisvalid
-             ) THEN
-               EXECUTE 'DROP INDEX CONCURRENTLY IF EXISTS takes_resolved_at_idx';
-             END IF;
-           END $$;`
-        );
+        await dropInvalidConcurrentIndex(engine, 71, 'takes_resolved_at_idx');
         await engine.runMigration(
           71,
           `CREATE INDEX CONCURRENTLY IF NOT EXISTS takes_resolved_at_idx
@@ -4207,20 +4211,7 @@ export const MIGRATIONS: Migration[] = [
       await engine.runMigration(91, columnsAndTrigger);
 
       if (engine.kind === 'postgres') {
-        // Pre-drop any invalid index from a prior CONCURRENTLY failure
-        // (matches v14 pattern).
-        await engine.runMigration(
-          91,
-          `DO $$ BEGIN
-             IF EXISTS (
-               SELECT 1 FROM pg_index i
-               JOIN pg_class c ON c.oid = i.indexrelid
-               WHERE c.relname = 'pages_generation_idx' AND NOT i.indisvalid
-             ) THEN
-               EXECUTE 'DROP INDEX CONCURRENTLY IF EXISTS pages_generation_idx';
-             END IF;
-           END $$;`
-        );
+        await dropInvalidConcurrentIndex(engine, 91, 'pages_generation_idx');
         await engine.runMigration(
           91,
           `CREATE INDEX CONCURRENTLY IF NOT EXISTS pages_generation_idx ON pages (generation);`
@@ -4474,18 +4465,7 @@ export const MIGRATIONS: Migration[] = [
     sql: '',
     handler: async (engine) => {
       if (engine.kind === 'postgres') {
-        await engine.runMigration(
-          96,
-          `DO $$ BEGIN
-             IF EXISTS (
-               SELECT 1 FROM pg_index i
-               JOIN pg_class c ON c.oid = i.indexrelid
-               WHERE c.relname = 'idx_facts_extract_conversation_session' AND NOT i.indisvalid
-             ) THEN
-               EXECUTE 'DROP INDEX CONCURRENTLY IF EXISTS idx_facts_extract_conversation_session';
-             END IF;
-           END $$;`
-        );
+        await dropInvalidConcurrentIndex(engine, 96, 'idx_facts_extract_conversation_session');
         await engine.runMigration(
           96,
           `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_facts_extract_conversation_session
@@ -4527,18 +4507,7 @@ export const MIGRATIONS: Migration[] = [
     transaction: false,
     handler: async (engine) => {
       if (engine.kind === 'postgres') {
-        await engine.runMigration(
-          97,
-          `DO $$ BEGIN
-             IF EXISTS (
-               SELECT 1 FROM pg_index i
-               JOIN pg_class c ON c.oid = i.indexrelid
-               WHERE c.relname = 'pages_dedup_idx' AND NOT i.indisvalid
-             ) THEN
-               EXECUTE 'DROP INDEX CONCURRENTLY IF EXISTS pages_dedup_idx';
-             END IF;
-           END $$;`
-        );
+        await dropInvalidConcurrentIndex(engine, 97, 'pages_dedup_idx');
         await engine.runMigration(
           97,
           `CREATE INDEX CONCURRENTLY IF NOT EXISTS pages_dedup_idx
@@ -4706,18 +4675,7 @@ export const MIGRATIONS: Migration[] = [
       );
 
       if (engine.kind === 'postgres') {
-        await engine.runMigration(
-          103,
-          `DO $$ BEGIN
-             IF EXISTS (
-               SELECT 1 FROM pg_index i
-               JOIN pg_class c ON c.oid = i.indexrelid
-               WHERE c.relname = 'content_chunks_stale_idx' AND NOT i.indisvalid
-             ) THEN
-               EXECUTE 'DROP INDEX CONCURRENTLY IF EXISTS content_chunks_stale_idx';
-             END IF;
-           END $$;`
-        );
+        await dropInvalidConcurrentIndex(engine, 103, 'content_chunks_stale_idx');
         await engine.runMigration(
           103,
           `CREATE INDEX CONCURRENTLY IF NOT EXISTS content_chunks_stale_idx
@@ -4751,18 +4709,7 @@ export const MIGRATIONS: Migration[] = [
     sql: '',
     handler: async (engine) => {
       if (engine.kind === 'postgres') {
-        await engine.runMigration(
-          104,
-          `DO $$ BEGIN
-             IF EXISTS (
-               SELECT 1 FROM pg_index i
-               JOIN pg_class c ON c.oid = i.indexrelid
-               WHERE c.relname = 'pages_atom_source_hash_idx' AND NOT i.indisvalid
-             ) THEN
-               EXECUTE 'DROP INDEX CONCURRENTLY IF EXISTS pages_atom_source_hash_idx';
-             END IF;
-           END $$;`
-        );
+        await dropInvalidConcurrentIndex(engine, 104, 'pages_atom_source_hash_idx');
         await engine.runMigration(
           104,
           `CREATE INDEX CONCURRENTLY IF NOT EXISTS pages_atom_source_hash_idx
@@ -5063,18 +5010,7 @@ export const MIGRATIONS: Migration[] = [
         `ALTER TABLE pages ADD COLUMN IF NOT EXISTS links_extracted_at TIMESTAMPTZ;`
       );
       if (engine.kind === 'postgres') {
-        await engine.runMigration(
-          112,
-          `DO $$ BEGIN
-             IF EXISTS (
-               SELECT 1 FROM pg_index i
-               JOIN pg_class c ON c.oid = i.indexrelid
-               WHERE c.relname = 'pages_links_extracted_at_idx' AND NOT i.indisvalid
-             ) THEN
-               EXECUTE 'DROP INDEX CONCURRENTLY IF EXISTS pages_links_extracted_at_idx';
-             END IF;
-           END $$;`
-        );
+        await dropInvalidConcurrentIndex(engine, 112, 'pages_links_extracted_at_idx');
         await engine.runMigration(
           112,
           `CREATE INDEX CONCURRENTLY IF NOT EXISTS pages_links_extracted_at_idx
@@ -5572,7 +5508,10 @@ export const MIGRATIONS: Migration[] = [
       await engine.executeRaw(recreateChunksFn);
 
       if (lang === 'english') {
-        console.log(`  v123: trigger functions recreated with language='english' (default — no backfill needed)`);
+        // stderr, NOT stdout: migrations run lazily inside any command's
+        // first DB connect — a console.log here polluted `doctor --json`
+        // stdout and broke jq consumers (heavy-tests fm_wallclock).
+        process.stderr.write(`  v123: trigger functions recreated with language='english' (default — no backfill needed)\n`);
         return;
       }
 
@@ -5593,11 +5532,96 @@ export const MIGRATIONS: Migration[] = [
         WHERE search_vector IS NOT NULL;
       `);
 
-      console.log(`  v123: trigger functions recreated with language='${lang}' + backfilled existing rows`);
+      process.stderr.write(`  v123: trigger functions recreated with language='${lang}' + backfilled existing rows\n`);
     },
   },
   {
     version: 124,
+    name: 'page_search_vector_drop_compiled_truth',
+    // #2704: a single markdown page whose compiled_truth exceeds Postgres's
+    // hard 1,048,575-byte tsvector cap made update_page_search_vector()
+    // throw "string is too long for tsvector" INSIDE the pages UPSERT
+    // transaction — not a per-file ledger entry, a transaction abort. The
+    // whole source's sync checkpoint stayed pinned (Sync BLOCKED) until the
+    // oversized file was fixed or manually skipped, even though every
+    // OTHER file in the run imported fine.
+    //
+    // Fix: drop compiled_truth (the unbounded whole-page body) from this
+    // trigger. It was already redundant — content_chunks.search_vector
+    // (Cathedral II Layer 3, v0.20.0) is the ACTUAL keyword-search source:
+    // searchKeyword() in postgres-engine.ts/pglite-engine.ts ranks and
+    // queries `cc.search_vector` exclusively; `pages.search_vector` is
+    // written by this trigger but never read by any query in this
+    // codebase (verified: no `pages.search_vector`/bare `search_vector`
+    // appears on either side of a WHERE/ts_rank anywhere outside this
+    // trigger's own definition and the reindex/backfill machinery that
+    // maintains it). And chunking already bounds each chunk_text well
+    // under the tsvector limit (chunkText() targets embedding-sized
+    // pieces, several orders of magnitude smaller than 1MB) — the overflow
+    // was specific to the whole-page grain this trigger no longer builds.
+    //
+    // title + timeline (both naturally small — a compiled_truth-sized
+    // title or timeline field would be its own bug) stay, so
+    // pages.search_vector keeps carrying SOME signal rather than going
+    // fully inert; a future PR can drop the column outright once its
+    // last non-search consumer (if any turns up) is confirmed gone.
+    //
+    // No backfill: existing rows keep whatever search_vector they already
+    // computed until their next UPDATE (harmless — nothing reads this
+    // column, so staleness has zero behavioral effect). The brains that
+    // actually hit this bug never successfully wrote a value for the
+    // oversized page in the first place, so there's nothing stale to fix
+    // for them specifically — the NEXT sync of that exact file is what
+    // proves the fix, not a backfill of already-working rows.
+    //
+    // Function body mirrors reindex-search-vector.ts's recreatePagesFn
+    // (documented contract there: keep both in lockstep) and the fresh-
+    // install baselines in pglite-schema.ts / schema-embedded.ts — all
+    // four updated in the same commit as this migration.
+    sql: '',
+    handler: async (engine) => {
+      const lang = getFtsLanguage();
+      await engine.executeRaw(`
+        CREATE OR REPLACE FUNCTION update_page_search_vector() RETURNS trigger SET search_path = pg_catalog, public AS $fn$
+        DECLARE
+          timeline_text TEXT;
+        BEGIN
+          SELECT coalesce(string_agg(summary || ' ' || detail, ' '), '')
+          INTO timeline_text
+          FROM timeline_entries
+          WHERE page_id = NEW.id;
+
+          NEW.search_vector :=
+            setweight(to_tsvector('${lang}', coalesce(NEW.title, '')), 'A') ||
+            setweight(to_tsvector('${lang}', coalesce(NEW.timeline, '')), 'C') ||
+            setweight(to_tsvector('${lang}', coalesce(timeline_text, '')), 'C');
+
+          RETURN NEW;
+        END;
+        $fn$ LANGUAGE plpgsql;
+      `);
+      process.stderr.write(`  v124: update_page_search_vector() no longer indexes compiled_truth (was overflowing tsvector on large pages, #2704)
+`);
+    },
+  },
+  {
+    version: 125,
+    name: 'take_proposals_per_claim_idempotency',
+    // #2138: the original idempotency key was per page, so each INSERT after
+    // the first claim silently conflicted. md5(claim_text) makes it per claim
+    // without adding/backfilling a column. The new key is strictly finer than
+    // the old key and therefore preserves all existing rows.
+    idempotent: true,
+    sql: `
+      DROP INDEX IF EXISTS take_proposals_idempotency_idx;
+      CREATE UNIQUE INDEX IF NOT EXISTS take_proposals_idempotency_idx
+        ON take_proposals (source_id, page_slug, content_hash, prompt_version, md5(claim_text));
+    `,
+  },
+  {
+    // Custom fork: was v124 on custom/main; renumbered to avoid colliding with
+    // upstream v124/v125. Idempotent UPDATE — safe if already applied under old number.
+    version: 126,
     name: 'inbox_workflow_frontmatter',
     // Inbox workflow state deliberately lives on pages, not in a second queue
     // table. Existing inbox/* pages predate the workflow metadata; backfill a
@@ -5696,7 +5720,6 @@ async function runMigrationSQLWithRetry(
   m: Migration,
   sql: string,
 ): Promise<void> {
-  const { isStatementTimeoutError, isRetryableConnError } = await import('./retry-matcher.ts');
   // GBRAIN_MIGRATE_BACKOFF_MS lets tests skip the 5s/15s/45s backoff. In
   // production the env var is unset and the default cadence applies.
   const fastBackoff = process.env.GBRAIN_MIGRATE_BACKOFF_MS;
@@ -5966,7 +5989,6 @@ export async function runMigrations(engine: BrainEngine): Promise<{ applied: num
   // reach the loop below). Best-effort + idempotent: a no-op on a healthy
   // index; `doctor` surfaces it independently if this ever fails.
   try {
-    const { repairTimelineDedupIndex } = await import('./timeline-dedup-repair.ts');
     const r = await repairTimelineDedupIndex(engine);
     if (r.repaired) {
       console.error(
