@@ -6,6 +6,53 @@ This file provides guidance to Qoder (qoder.com) when working with code in this 
 
 GBrain is a personal knowledge brain and retrieval system written in TypeScript (Bun runtime). It provides hybrid RAG search (vector + keyword + relational) over a personal knowledge base of markdown pages. Two storage engines: PGLite (embedded Postgres via WASM, zero-config default) and Postgres + pgvector (managed Supabase or self-hosted). The CLI and MCP server are both generated from a single contract-first operation definitions file.
 
+> **Becoming someone's persistent personal agent** (identity + memory + private repo)?
+> Follow [`BOOTSTRAP_FOR_AGENTS.md`](./BOOTSTRAP_FOR_AGENTS.md) — the `gbrain bootstrap`
+> flow — instead of the plain install below, then come back here for the operating
+> protocol. Connecting to an EXISTING remote brain from a laptop agent?
+> `gbrain connect https://your-host/mcp --token gbrain_xxx --install` (see the MCP
+> table in [`README.md`](./README.md)).
+
+## Install (5 min)
+
+<!-- npm-trap + #218 recovery: canonical copy lives in README.md ("Install" warning) — sync edits. -->
+1. Install gbrain via Bun (the canonical path):
+   ```bash
+   curl -fsSL https://bun.sh/install | bash
+   export PATH="$HOME/.bun/bin:$PATH"
+   bun install -g github:garrytan/gbrain
+   ```
+   If `bun install -g` aborts or `gbrain doctor` reports `schema_version: 0`,
+   the CLI prints a recovery hint pointing at [#218](https://github.com/garrytan/gbrain/issues/218).
+   Run `gbrain apply-migrations --yes` to recover, or fall back to the
+   deterministic install: `git clone https://github.com/garrytan/gbrain.git ~/gbrain && cd ~/gbrain && bun install && bun link`.
+2. Init the brain: `gbrain init` (defaults to PGLite, zero-config). For 1000+ files or
+   multi-machine sync, init suggests Postgres + pgvector via Supabase.
+3. **STOP — ask the user about search mode.** `gbrain init` auto-applied a
+   default but printed a 9-cell cost matrix (mode × downstream model)
+   preceded by `[AGENT]` markers. You MUST relay the matrix to the operator
+   and confirm their choice before continuing. Cost spread between corners
+   is 25x — silent acceptance is the wrong default. See
+   [`./INSTALL_FOR_AGENTS.md`](./INSTALL_FOR_AGENTS.md) Step 3.5 for the
+   exact ask-the-user protocol. Same banner fires on `gbrain post-upgrade`
+   for existing users (search modes were added in v0.32.3).
+4. Read [`./INSTALL_FOR_AGENTS.md`](./INSTALL_FOR_AGENTS.md) for the full step-by-step
+   flow (API keys, identity, cron, verification).
+
+## Common tasks
+
+- **Configure:** [`docs/ENGINES.md`](./docs/ENGINES.md),
+  [`docs/guides/live-sync.md`](./docs/guides/live-sync.md),
+  [`docs/mcp/DEPLOY.md`](./docs/mcp/DEPLOY.md).
+- **Debug:** [`docs/GBRAIN_VERIFY.md`](./docs/GBRAIN_VERIFY.md),
+  [`docs/guides/minions-fix.md`](./docs/guides/minions-fix.md), `gbrain doctor --fix`.
+- **Migrate / upgrade:** `gbrain upgrade` (binary self-update + schema migrations + post-upgrade prompts),
+  [`docs/UPGRADING_DOWNSTREAM_AGENTS.md`](./docs/UPGRADING_DOWNSTREAM_AGENTS.md),
+  [`skills/migrations/`](./skills/migrations/), `gbrain apply-migrations --yes` (manual schema-only).
+- **Everything else:** [`./llms.txt`](./llms.txt) is the full documentation map.
+  [`./llms-full.txt`](./llms-full.txt) is the same map with core docs inlined for
+  single-fetch ingestion.
+
 ## Build & Development Commands
 
 ```bash

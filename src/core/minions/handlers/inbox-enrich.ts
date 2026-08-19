@@ -2,7 +2,7 @@ import type { BrainEngine } from '../../engine.ts';
 import { importFromContent } from '../../import-file.ts';
 import { patchInboxFrontmatter } from '../../inbox.ts';
 import { serializeMarkdown } from '../../markdown.ts';
-import { runAutoLink } from '../../operations.ts';
+import { runAutoLink } from '../../ops/pages.ts';
 import type { MinionJobContext } from '../types.ts';
 
 export interface InboxEnrichResult {

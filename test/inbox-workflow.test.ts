@@ -295,9 +295,9 @@ describe('Inbox deterministic workflow', () => {
     await put('inbox/legacy', '# Legacy');
     await engine.setConfig('version', '122');
     const result = await runMigrations(engine);
-    // inbox_workflow_frontmatter was renumbered to 126 on the upstream merge
-    // that landed v124 page_search_vector_drop_compiled_truth + v125 take_proposals.
-    expect(result.current).toBe(126);
+    // inbox_workflow_frontmatter is the last custom migration (currently v133);
+    // it was bumped whenever upstream claimed the previous number.
+    expect(result.current).toBe(LATEST_VERSION);
     const page = await engine.getPage('inbox/legacy', { sourceId: 'default' });
     expect(page?.frontmatter.raw_content).toBe('# Legacy');
     expect(page?.frontmatter.inbox_status).toBe('pending_frontmatter');
