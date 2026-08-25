@@ -64,13 +64,31 @@ export function surfaceWiderThan(a: McpSurface, b: McpSurface): boolean {
  * the fallback: the reviewed subagent brain-tool allow-list
  * (BRAIN_TOOL_ALLOWLIST — imported, never name-copied) plus the agent lane
  * (`submit_agent` / `get_agent_job`, FOV-4 — agent-scope clients must not be
- * stranded). Corrected later by `scripts/derive-starter-ops.ts` + the E3
- * advisor drift check once the histogram pull lands.
+ * stranded).
+ *
+ * 2026-08-25 re-derivation (scripts/derive-starter-ops.ts, 30d window):
+ * single observed HTTP client, so nothing is EVICTED (D12 parity keeps the
+ * allow-list intact) and the top-used ops missing from the set are appended:
+ * advisor, find_conflicts, get_stats, get_status_snapshot, graph_overview,
+ * list_brain_skillpack, list_inbox, list_jobs (doctor drift) + query,
+ * list_pages, think (client usage).
  */
 const FALLBACK_DAILY_OPS: readonly string[] = [
   ...BRAIN_TOOL_ALLOWLIST,
   'submit_agent',
   'get_agent_job',
+  // Usage-derived additions (2026-08-25) — see provenance note above.
+  'advisor',
+  'find_conflicts',
+  'get_stats',
+  'get_status_snapshot',
+  'graph_overview',
+  'list_brain_skillpack',
+  'list_inbox',
+  'list_jobs',
+  'list_pages',
+  'query',
+  'think',
 ];
 
 /**

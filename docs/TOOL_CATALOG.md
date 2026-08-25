@@ -4,15 +4,15 @@
 <!-- Regenerate: bun run scripts/generate-tool-catalog.ts -->
 <!-- Freshness-guarded by scripts/check-tool-catalog-fresh.sh (bun run verify). -->
 
-Every non-localOnly operation on the MCP surface: 118 tools across 22 areas. **Starter** marks membership in the ~27-op `starter` surface (`src/mcp/surface.ts`); **Gate** names the config key that must be true before remote callers see/call the op (`gbrain config set <key> true`). What a given token actually sees is further filtered per request by scope, bound-client fence, publish gates, and the per-client surface — see `docs/operations/mcp-surface-runbook.md`. Area names are non-contractual groupings.
+Every non-localOnly operation on the MCP surface: 126 tools across 22 areas. **Starter** marks membership in the ~36-op `starter` surface (`src/mcp/surface.ts`); **Gate** names the config key that must be true before remote callers see/call the op (`gbrain config set <key> true`). What a given token actually sees is further filtered per request by scope, bound-client fence, publish gates, and the per-client surface — see `docs/operations/mcp-surface-runbook.md`. Area names are non-contractual groupings.
 
 ## admin
 
 | Tool | Description | Scope | Starter | Gate |
 |---|---|---|---|---|
 | `get_health` | Brain health dashboard (embed coverage, stale pages, orphans). | admin |  |  |
-| `get_stats` | Brain statistics (page count, chunk count, etc.) | admin |  |  |
-| `get_status_snapshot` | Snapshot for `gbrain status` thin-client mode: sync freshness + last cycle + queue depths + worker liveness. | admin |  |  |
+| `get_stats` | Brain statistics (page count, chunk count, etc.) | admin | yes |  |
+| `get_status_snapshot` | Snapshot for `gbrain status` thin-client mode: sync freshness + last cycle + queue depths + worker liveness. | admin | yes |  |
 | `get_usage` | Aggregate chat usage + cost from the chat_usage_log ledger (per-model and per-phase token counts, cache reads/writes, USD estimates) with explicit coverage fields. | admin |  |  |
 | `quarantine_list` | List quarantined (hidden) and optionally content-flagged pages by scanning page frontmatter, newest-updated first. | admin |  |  |
 | `run_doctor` | Run brain health checks and return a structured DoctorReport (thin-client doctor surface). | admin |  |  |
@@ -23,7 +23,7 @@ Every non-localOnly operation on the MCP surface: 118 tools across 22 areas. **S
 
 | Tool | Description | Scope | Starter | Gate |
 |---|---|---|---|---|
-| `advisor` | Ranked, read-only "what to do next" for this brain: version drift, pending migrations, schema-pack issues, stalled jobs, usage-shape gaps, and setup smells. | read |  | `mcp.publish_advisor` |
+| `advisor` | Ranked, read-only "what to do next" for this brain: version drift, pending migrations, schema-pack issues, stalled jobs, usage-shape gaps, and setup smells. | read | yes | `mcp.publish_advisor` |
 
 ## chronicle
 
@@ -78,7 +78,10 @@ Every non-localOnly operation on the MCP surface: 118 tools across 22 areas. **S
 
 | Tool | Description | Scope | Starter | Gate |
 |---|---|---|---|---|
+| `adopt_compiled_truth` | Persist a compiled-truth body into a page (chunks + re-embeds so the body earns the compiled_truth retrieval boost). | write |  |  |
+| `compile_truth` | LLM-merge a set of candidate pages into one authoritative markdown body plus a keep/merge/add/remove diff. | read |  |  |
 | `find_anomalies` | Returns statistical anomalies in recent page activity, grouped by cohort (tag or type). | read | yes |  |
+| `find_conflicts` | Detect groups of conflicting/overlapping markdown pages on a topic, for the Compiled Truth workbench. | read | yes |  |
 | `find_contradictions` | v0.32.6 — return suspected-contradiction findings from the most recent `gbrain eval suspected-contradictions` probe run, optionally filtered by slug and/or severity. | read |  |  |
 | `find_experts` | Answers 'who in my brain knows about <topic>'. | read |  |  |
 | `find_trajectory` | v0.35.4 — return the chronological claim trajectory for an entity (typed metric values over time, plus auto-detected regressions and narrative drift). | read |  |  |
@@ -95,7 +98,7 @@ Every non-localOnly operation on the MCP surface: 118 tools across 22 areas. **S
 | `get_job` | Get job status and details by ID. | admin |  |  |
 | `get_job_progress` | Get structured progress for a running job. | admin |  |  |
 | `get_job_stats` | Job queue statistics. | admin |  |  |
-| `list_jobs` | List jobs with optional filters. | admin |  |  |
+| `list_jobs` | List jobs with optional filters. | admin | yes |  |
 | `pause_job` | Pause a waiting, active, or delayed job | admin |  |  |
 | `replay_job` | Replay a completed/failed/dead job, optionally with modified data | admin |  |  |
 | `resume_job` | Resume a paused job back to waiting | admin |  |  |
@@ -112,6 +115,7 @@ Every non-localOnly operation on the MCP surface: 118 tools across 22 areas. **S
 | `find_orphans` | Find disconnected pages. | read |  |  |
 | `get_backlinks` | List incoming links to a page | read | yes |  |
 | `get_links` | List outgoing links from a page | read |  |  |
+| `graph_overview` | Root-less whole-graph overview: the most-connected pages (by degree) plus every edge among them, as GraphNode[]. | read | yes |  |
 | `list_link_sources` | List distinct link_source provenances in the brain with edge counts (e.g. | read | yes |  |
 | `remove_link` | Remove link between pages | write |  |  |
 | `traverse_graph` | Traverse link graph from a page. | read | yes |  |
@@ -150,17 +154,21 @@ Every non-localOnly operation on the MCP surface: 118 tools across 22 areas. **S
 |---|---|---|---|---|
 | `capture` | Capture a quick note into the brain — the "just remember this" write. | write | yes |  |
 | `delete_page` | Soft-delete a page. | write |  |  |
+| `discard_inbox_items` | Discard inbox pages in a bounded batch. | write |  |  |
 | `fetch` | Fetch the full text of one search result by its `id` (OpenAI deep-research contract: the search/fetch pair). | read |  |  |
 | `get_chunks` | Get content chunks for a page | read |  |  |
+| `get_inbox_item` | Get one inbox item with raw/enriched content and typed links. | read |  |  |
 | `get_page` | Read a page by slug (supports optional fuzzy matching). | read | yes |  |
 | `get_raw_data` | Retrieve raw data for a page | read |  |  |
 | `get_versions` | Page version history | read |  |  |
+| `list_inbox` | List inbox/* pages with deterministic enrichment workflow state and aggregate counts. | read | yes |  |
 | `list_pages` | List pages with optional filters. | read | yes |  |
 | `put_page` | Write/update a page (markdown with frontmatter). | write | yes |  |
 | `put_raw_data` | Store raw API response data for a page | write |  |  |
 | `resolve_slugs` | Fuzzy-resolve a partial slug to matching page slugs | read | yes |  |
 | `restore_page` | v0.26.5 — restore a soft-deleted page (clear deleted_at). | write |  |  |
 | `revert_version` | Revert page to a previous version | write |  |  |
+| `trigger_inbox_enrichment` | Queue deterministic, zero-LLM enrichment for inbox pages. | write |  |  |
 
 ## schema
 
@@ -193,7 +201,7 @@ Every non-localOnly operation on the MCP surface: 118 tools across 22 areas. **S
 | Tool | Description | Scope | Starter | Gate |
 |---|---|---|---|---|
 | `get_skill` | Fetch one skill's full instructions by name. | read |  | `mcp.publish_skills` |
-| `list_brain_skillpack` | List brain-resident skillpacks this brain ships (per-source). | read |  | `mcp.publish_skills` |
+| `list_brain_skillpack` | List brain-resident skillpacks this brain ships (per-source). | read | yes | `mcp.publish_skills` |
 | `list_skills` | List the skills this agent's brain publishes. | read |  | `mcp.publish_skills` |
 
 ## sources
@@ -225,7 +233,7 @@ Every non-localOnly operation on the MCP surface: 118 tools across 22 areas. **S
 | `takes_search` | Keyword search across takes (pg_trgm similarity over claim text) | read |  |  |
 | `takes_supersede` | Supersede a take with a replacement claim: the old row is struck through (kept for archaeology), the replacement appends at the next fence row number. | write |  |  |
 | `takes_update` | Update a take's mutable fields (weight, source, since date). | write |  |  |
-| `think` | Multi-hop synthesis across pages + takes + graph. | read |  |  |
+| `think` | Multi-hop synthesis across pages + takes + graph. | read | yes |  |
 
 ## timeline
 
